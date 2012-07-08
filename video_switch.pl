@@ -94,6 +94,11 @@ $global_cfg{db_pswd} = "Nhe,fleh2?";
   # Channel types dictionary
   RegisterSQL("chan_types", "SELECT id FROM channel_types WHERE chan_type = ?");
 
+  # Task tables dictionary
+  RegisterSQL("task_types", "SELECT id FROM task_types WHERE name= ?");
+
+  # Channel states
+  RegisterSQL("chan_stats", "SELECT id FROM channel_states WHERE name = ?");
 }
 
 # Get channel type id by its name
@@ -101,6 +106,19 @@ sub getChanTypeId($) {
    my @args = ($_[0]);
    return  GetCachedDbValue("chan_types", \@args);
 };
+
+# Get task type id by its name
+sub getTaskTypeId($) {
+   my @args = ($_[0]);
+   return  GetCachedDbValue("task_types", \@args);
+};
+
+# Get channel state id by name
+sub getChanStateId($) {
+   my @args = ($_[0]);
+   return  GetCachedDbValue("chan_stats", \@args);
+};
+
 
 # Database connection
 my $dbh = DBI->connect("DBI:mysql:" . $global_cfg{data_source},
@@ -111,8 +129,13 @@ or die "Database connection not made: $DBI::errstr";
 # Initializing the caches
 InitDbCache($dbh);
 
+# Example:
 print "RTMP_IN: " . getChanTypeId("RTMP_IN") . "\n";
 print "RTMP_OUT: " . getChanTypeId("RTMP_OUT") . "\n";
+
+print "Task type SYNC: " . getTaskTypeId("SYNC") . "\n";
+
+print "Channel type DOWN: " . getChanStateId("DOWN") . "\n";
 
 # Finalization
 DoneDbCache();
