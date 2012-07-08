@@ -54,7 +54,7 @@ DROP TABLE IF EXISTS `video_switch`.`channel_details` ;
 SHOW WARNINGS;
 CREATE  TABLE IF NOT EXISTS `video_switch`.`channel_details` (
   `id` INT NOT NULL AUTO_INCREMENT ,
-  `tm_created` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ,
+  `tm_created` TIMESTAMP NOT NULL DEFAULT   CURRENT_TIMESTAMP ,
   `channel` INT NOT NULL ,
   `app` VARCHAR(256) NOT NULL COMMENT 'VIDEO_app' ,
   `playPath` VARCHAR(256) NOT NULL COMMENT 'VIDEO_playPath' ,
@@ -152,7 +152,7 @@ SHOW WARNINGS;
 CREATE  TABLE IF NOT EXISTS `video_switch`.`tasks` (
   `id` INT NOT NULL AUTO_INCREMENT ,
   `task_type` INT NOT NULL ,
-  `tm_created` TIMESTAMP NOT NULL DEFAULT CURRENT_TIME ,
+  `tm_created` TIMESTAMP NOT NULL DEFAULT   CURRENT_TIMESTAMP ,
   `arg1` INT NULL ,
   `arg2` INT NULL ,
   `arg_string` VARCHAR(45) NULL ,
