@@ -73,10 +73,8 @@ $global_cfg{ipc_dir} = "/tmp";
      if(exists($caches{$key})) { $cache_ref = $caches{$key}; };
 
      if(exists($st{$key})) {
-     	if(defined($cache_ref)) {
-            if(exists($$cache_ref{$id})) {
+     	if((defined($cache_ref)) && (exists($$cache_ref{$id}))) {
 		        return $cache_ref->{$id};
-     	    };
         }
      } else {
 	      $st{$key} = $db->prepare($sql{$key})
@@ -91,9 +89,7 @@ $global_cfg{ipc_dir} = "/tmp";
      $st{$key}->execute() or die "executing: " . $st{$key}->errstr;
      my $r = new Data::Table([], $st{$key}->{NAME_uc});
 
-     while(my @d = $st{$key}->fetchrow_array) {
-	    $r->addRow(\@d);
-     };
+     while(my @d = $st{$key}->fetchrow_array) { $r->addRow(\@d); };
 
      if(defined($cache_ref)) { $$cache_ref{$id} = $r; };
 
@@ -207,14 +203,15 @@ sub getOutCmd($) {
    # See architecture specs for the details: https://github.com/rtmp-switcher/backend/wiki/Architecture
    my $r = $t->rowHashRef(0);
    my $url = $r->{"URL"};
-   if((defined($r->{"TCURL"})) and ($r->{"TCURL"})) { $url .= $r->{"TCURL"}; };
+   if((defined($r->{"TCURL"})) && ($r->{"TCURL"})) { $url .= $r->{"TCURL"}; };
    return " -codec copy -f flv \"" . $url . "\"";
 };
 
 # Returns the rtmpdump command line to catch the RTMP stream coming from the incoming channel
 # Input argument: incoming channel id
 sub getInCmd($) {
-   my $t = getChanCmd(shift);
+   my $chan_id = shift;
+   my $t = getChanCmd($chan_id);
 
    # Creating rtmpdump command line based on the query results
    my $r = $t->rowHashRef(0);
@@ -223,6 +220,7 @@ sub getInCmd($) {
         _log "key: $k, value: $v";
    }
 
+   return "rtmpdump -v -r " . $r->{"URL"} . " -y ? -W " . $r->{"SWFURL"} . " -p " . $r->{"PAGEURL"} . " -a ? -o " . getFIFOname($chan_id);
    # rtmpdump -v -r rtmp://flash69.ustream.tv/ustreamVideo/10107870 -y "streams/live" -W "http://static-cdn1.ustream.tv/swf/live/viewer:64.swf?vrsl=c:236&ulbr=100" -p "http://www.ustream.tv/channel/titanium-sportstiming" -a "ustreamVideo/10107870" -o -
 }
 
@@ -265,7 +263,7 @@ print "RTMP_OUT: " . getChanTypeId("RTMP_OUT") . "\n";
 
 print "Channel type DOWN: " . getChanStateId("DOWN") . "\n";
 
-getInCmd(1);
+_log getInCmd(1);
 
 _log getOutCmd(5);
 
