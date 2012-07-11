@@ -24,7 +24,7 @@ $global_cfg{data_source} = "video_switch:video.perestroike2.net";
 ## Database user
 $global_cfg{db_user} = "video_switch";
 ## Database user's password
-$global_cfg{db_pswd} = "iii";
+$global_cfg{db_pswd} = "";
 ## Directory for IPC resources (named pipes and message queues)
 $global_cfg{ipc_dir} = "/tmp";
 
@@ -184,36 +184,41 @@ sub getFIFOname($) {
   return $global_cfg{ipc_dir} . "/video_sw-" . $id . ".in";
 };
 
-# Returns the ffmpeg parameters to use to broadcast the outgoing stream
-# The only parameter which is not formed by this subroutine is "-i <source>"
-# Input argument: outgoing channel id
-sub getOutCmd($) {
+# Returns the latest channel_details row for specified channel id
+# Input argument: channel id
+sub getChanCmd($) {
    my @args = ($_[0], $_[0]);
 
    my $t = GetCachedDbTable("chan_params", \@args);
    assert($t->isEmpty ne 1);
    assert($t->nofRow eq 1);
 
+   return $t;
+};
+
+# Returns the ffmpeg parameters to use to broadcast the outgoing stream
+# The only parameter which is not formed by this subroutine is "-i <source>"
+# Input argument: outgoing channel id
+sub getOutCmd($) {
+   my $t = getChanCmd(shift);
+
+   # Outgoing RTMP URL is stored in the "URL" column.
+   # Suffix is stored in the "TCURL" column
+   # See architecture specs for the details: https://github.com/rtmp-switcher/backend/wiki/Architecture
    my $r = $t->rowHashRef(0);
-   while( my ($k, $v) = each %$r ) {
-        _log "key: $k, value: $v";
-   }
-
-
- #  _log "RMTP URI for the outgoing channel " . $args[0] . ": " . "'$uri'";
- #  return " -codec copy -f flv \"$uri\"";
+   my $url = $r->{"URL"};
+   if((defined($r->{"TCURL"})) and ($r->{"TCURL"})) { $url .= $r->{"TCURL"}; };
+   return " -codec copy -f flv \"" . $url . "\"";
 };
 
 # Returns the rtmpdump command line to catch the RTMP stream coming from the incoming channel
 # Input argument: incoming channel id
 sub getInCmd($) {
-   my @args = ($_[0], $_[0]);
+   my $t = getChanCmd(shift);
 
-   my $t = GetCachedDbTable("chan_params", \@args);
-   assert($t->isEmpty ne 1);
-   assert($t->nofRow eq 1);
-
+   # Creating rtmpdump command line based on the query results
    my $r = $t->rowHashRef(0);
+
    while( my ($k, $v) = each %$r ) {
         _log "key: $k, value: $v";
    }
@@ -261,6 +266,8 @@ print "RTMP_OUT: " . getChanTypeId("RTMP_OUT") . "\n";
 print "Channel type DOWN: " . getChanStateId("DOWN") . "\n";
 
 getInCmd(1);
+
+_log getOutCmd(5);
 
 # Finalization
 DoneDbCache();
