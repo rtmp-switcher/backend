@@ -1,4 +1,11 @@
 #!/usr/bin/perl -w
+#
+#       video_switch.pl. July 2012
+#
+#       Connects incoming video streams (RTMP) to outgoing RTMP stream.
+#
+#       Copyright Vitaly Repin <vitaly.repin@gmail.com>.  GPL.
+#
 
 use strict;
 use Carp::Assert;
@@ -17,7 +24,7 @@ $global_cfg{data_source} = "video_switch:video.perestroike2.net";
 ## Database user
 $global_cfg{db_user} = "video_switch";
 ## Database user's password
-$global_cfg{db_pswd} = "password";
+$global_cfg{db_pswd} = "iii";
 ## Directory for IPC resources (named pipes and message queues)
 $global_cfg{ipc_dir} = "/tmp";
 
@@ -27,7 +34,7 @@ $global_cfg{ipc_dir} = "/tmp";
   my %st;
   # Database SQL statements
   my %sql;
-  # Ссылки на caches
+  # References to the caches
   my %caches;
   # Database handle
   my $db;
@@ -38,13 +45,21 @@ $global_cfg{ipc_dir} = "/tmp";
     foreach (keys %st) { $st{$_}->finish(); };
   };
 
-  sub RegisterSQL($ $) {
+  # Registers SQL-statement in the system
+  # Param 1: SQL-statement alias (to be used in calls to GetCachedDbTable and GetCachedDbValue)
+  # Param 2: SQL statement itself (can and typically contains "?" placeholders for the binding vars
+  # Param 3: 1 if result of the query should be cached. 0 if the query should be executed every time
+  sub RegisterSQL($ $ $) {
     my $key = shift;
 
     if(exists($sql{$key})) { return undef; }
 
     $sql{$key} = shift;
-    $caches{$key} = {};
+
+    my $cache_enabled = shift;
+    if ($cache_enabled) {
+        $caches{$key} = {};
+    };
     return 1;
   };
 
@@ -53,18 +68,22 @@ $global_cfg{ipc_dir} = "/tmp";
      my $id_ref = shift; my $id = (join ",", @$id_ref);
      my $f_n =  (caller(0))[3];
 
-     my $cache_ref = $caches{$key};
+     my $cache_ref = undef;
+
+     if(exists($caches{$key})) { $cache_ref = $caches{$key}; };
 
      if(exists($st{$key})) {
-     	if(exists($$cache_ref{$id})) {
-		    return $cache_ref->{$id};
-     	};
+     	if(defined($cache_ref)) {
+            if(exists($$cache_ref{$id})) {
+		        return $cache_ref->{$id};
+     	    };
+        }
      } else {
-	  $st{$key} = $db->prepare($sql{$key})
+	      $st{$key} = $db->prepare($sql{$key})
      	  or die "preparing '$sql{$key}' for '$key': " . $db->errstr;
      };
 
-     # Not in the cache => retrieving from the database
+     # Not in the cache or should not be cached => retrieving from the database
      my $i = 1;
      foreach(@$id_ref) {
 	    $st{$key}->bind_param($i++, $_) or die "binding: " . $st{$key}->errstr;
@@ -76,7 +95,7 @@ $global_cfg{ipc_dir} = "/tmp";
 	    $r->addRow(\@d);
      };
 
-     $$cache_ref{$id} = $r;
+     if(defined($cache_ref)) { $$cache_ref{$id} = $r; };
 
      return $r;
   };
@@ -99,18 +118,21 @@ $global_cfg{ipc_dir} = "/tmp";
 # Cached SQL statements
 {
   # Channel types dictionary
-  RegisterSQL("chan_types", "SELECT id FROM channel_types WHERE chan_type = ?");
+  RegisterSQL("chan_types", "SELECT id FROM channel_types WHERE chan_type = ?", 1);
 
   # Channel states
-  RegisterSQL("chan_stats", "SELECT id FROM channel_states WHERE name = ?");
+  RegisterSQL("chan_stats", "SELECT id FROM channel_states WHERE name = ?", 1);
 
   # Get URI of the outgoing channel
-  RegisterSQL("out_chan_uri", "SELECT uri from channels WHERE id = ?");
+  RegisterSQL("out_chan_uri", "SELECT uri from channels WHERE id = ?", 0);
 
   # Get incoming channels params
-  RegisterSQL("in_chan_params", "SELECT app, playPath, flashVer, swfUrl, url, pageUrl, tcUrl FROM channel_details ".
-                                "WHERE tm_created = (SELECT MAX(tm_created) FROM channel_details WHERE channel = ?) " .
-                                "AND channel = ?");
+  RegisterSQL("chan_params", "SELECT app, playPath, flashVer, swfUrl, url, pageUrl, tcUrl FROM channel_details ".
+                             "WHERE tm_created = (SELECT MAX(tm_created) FROM channel_details WHERE channel = ?) " .
+                             "AND channel = ?", 0);
+
+  # Get list of channels by channel type
+  RegisterSQL("chans_by_type", "SELECT id, name FROM channels WHERE is_enabled = TRUE AND chan_type = ?", 0);
 }
 
 # Get channel type id by its name
@@ -124,6 +146,13 @@ sub getChanStateId($) {
    my @args = ($_[0]);
    return  GetCachedDbValue("chan_stats", \@args);
 };
+
+# Get list of channels by channel type
+sub getChansByType($) {
+   my @args = ($_[0]);
+   return  GetCachedDbTable("chans_by_type", \@args);
+};
+
 
 # Logs message to stderr
 sub _log($) {
@@ -159,10 +188,20 @@ sub getFIFOname($) {
 # The only parameter which is not formed by this subroutine is "-i <source>"
 # Input argument: outgoing channel id
 sub getOutCmd($) {
-   my @args = ($_[0]);
-   my $uri = GetCachedDbValue("chan_stats", \@args);
-   _log "RMTP URI for the outgoing channel " . $args[0] . ": " . "'$uri'";
-   return " -codec copy -f flv \"$uri\"";
+   my @args = ($_[0], $_[0]);
+
+   my $t = GetCachedDbTable("chan_params", \@args);
+   assert($t->isEmpty ne 1);
+   assert($t->nofRow eq 1);
+
+   my $r = $t->rowHashRef(0);
+   while( my ($k, $v) = each %$r ) {
+        _log "key: $k, value: $v";
+   }
+
+
+ #  _log "RMTP URI for the outgoing channel " . $args[0] . ": " . "'$uri'";
+ #  return " -codec copy -f flv \"$uri\"";
 };
 
 # Returns the rtmpdump command line to catch the RTMP stream coming from the incoming channel
@@ -170,30 +209,25 @@ sub getOutCmd($) {
 sub getInCmd($) {
    my @args = ($_[0], $_[0]);
 
-   my $t = GetCachedDbTable("in_chan_params", \@args);
+   my $t = GetCachedDbTable("chan_params", \@args);
    assert($t->isEmpty ne 1);
    assert($t->nofRow eq 1);
 
-   my %r;
-   foreach($t->header) { $r{$_} = $t->elm(0, $_); };
-
-   foreach (keys %r) { _log "$_: " . $r{$_}; };
+   my $r = $t->rowHashRef(0);
+   while( my ($k, $v) = each %$r ) {
+        _log "key: $k, value: $v";
+   }
 
    # rtmpdump -v -r rtmp://flash69.ustream.tv/ustreamVideo/10107870 -y "streams/live" -W "http://static-cdn1.ustream.tv/swf/live/viewer:64.swf?vrsl=c:236&ulbr=100" -p "http://www.ustream.tv/channel/titanium-sportstiming" -a "ustreamVideo/10107870" -o -
 }
 
 # Creates named pipes. One pipe for every incoming channel
 sub createFIFO() {
-  my $sql = "SELECT id, name FROM channels WHERE is_enabled = TRUE AND chan_type = " . getChanTypeId("RTMP_IN") . ";";
+  my $ch_tbl = getChansByType(getChanTypeId("RTMP_IN"));
 
-  my $st = $dbh->prepare($sql);
-  $st->execute() or log_die "executing: " . $st->errstr;
-
-  my ($id, $name);
-  $st->bind_columns(\$id, \$name);
-
-  while ($st->fetch()) {
-    my $fname = getFIFOname($id);
+  for (my $i = 0; $i < $ch_tbl->nofRow; $i++) {
+    my $r = $ch_tbl->rowHashRef($i);
+    my $fname = getFIFOname($r->{"ID"});
 
     # First - remove existing FIFOs. Just to clean up everything.
     if (-e $fname) {
@@ -203,7 +237,7 @@ sub createFIFO() {
 
     # Making named pipes
     mkfifo($fname, 0600) or log_die "mkfifo($fname) failed: $!";
-    _log "FIFO for channel '" . $name . "' has been created: '" . $fname . "'";
+    _log "FIFO for channel '" . $r->{"NAME"} . "' has been created: '" . $fname . "'";
  };
 };
 
