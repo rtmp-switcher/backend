@@ -2,7 +2,10 @@ SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;
 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='TRADITIONAL';
 
+DROP SCHEMA IF EXISTS `video_switch` ;
+CREATE SCHEMA IF NOT EXISTS `video_switch` DEFAULT CHARACTER SET utf8 ;
 SHOW WARNINGS;
+USE `video_switch` ;
 
 -- -----------------------------------------------------
 -- Table `video_switch`.`channel_types`
@@ -32,7 +35,7 @@ CREATE  TABLE IF NOT EXISTS `video_switch`.`channels` (
   `is_enabled` TINYINT(1)  NOT NULL DEFAULT 1 ,
   `comment` VARCHAR(256) NULL ,
   `chan_type` INT NOT NULL ,
-  `url` TEXT NOT NULL COMMENT 'HTTP URL' ,
+  `uri` TEXT NOT NULL COMMENT 'HTTP or RMTP URI' ,
   `bkp_folder` VARCHAR(256) NULL COMMENT 'Relative path!' ,
   PRIMARY KEY (`id`, `chan_type`) ,
   INDEX `fk_chan_type` (`chan_type` ASC) ,
@@ -127,47 +130,6 @@ COMMENT = 'Status of the channel' ;
 
 SHOW WARNINGS;
 
--- -----------------------------------------------------
--- Table `video_switch`.`task_types`
--- -----------------------------------------------------
-DROP TABLE IF EXISTS `video_switch`.`task_types` ;
-
-SHOW WARNINGS;
-CREATE  TABLE IF NOT EXISTS `video_switch`.`task_types` (
-  `id` INT NOT NULL AUTO_INCREMENT ,
-  `name` VARCHAR(45) NOT NULL ,
-  `description` VARCHAR(256) NULL ,
-  PRIMARY KEY (`id`) )
-ENGINE = InnoDB, 
-COMMENT = 'Task types dictionary' ;
-
-SHOW WARNINGS;
-
--- -----------------------------------------------------
--- Table `video_switch`.`tasks`
--- -----------------------------------------------------
-DROP TABLE IF EXISTS `video_switch`.`tasks` ;
-
-SHOW WARNINGS;
-CREATE  TABLE IF NOT EXISTS `video_switch`.`tasks` (
-  `id` INT NOT NULL AUTO_INCREMENT ,
-  `task_type` INT NOT NULL ,
-  `tm_created` TIMESTAMP NOT NULL DEFAULT   CURRENT_TIMESTAMP ,
-  `arg1` INT NULL ,
-  `arg2` INT NULL ,
-  `arg_string` VARCHAR(45) NULL ,
-  PRIMARY KEY (`id`, `task_type`) ,
-  INDEX `fk_tasks_type` (`task_type` ASC) ,
-  CONSTRAINT `fk_tasks_type`
-    FOREIGN KEY (`task_type` )
-    REFERENCES `video_switch`.`task_types` (`id` )
-    ON DELETE CASCADE
-    ON UPDATE CASCADE)
-ENGINE = InnoDB, 
-COMMENT = 'Tasks received from the clients' ;
-
-SHOW WARNINGS;
-
 CREATE USER `video_switch` IDENTIFIED BY 'Nhe,fleh2?';
 
 grant ALL on TABLE `video_switch`.`channel_states` to video_switch;
@@ -198,15 +160,5 @@ START TRANSACTION;
 USE `video_switch`;
 INSERT INTO `video_switch`.`channel_states` (`id`, `name`, `description`) VALUES (NULL, 'UP', 'Channel is UP');
 INSERT INTO `video_switch`.`channel_states` (`id`, `name`, `description`) VALUES (NULL, 'DOWN', 'Channel is DOWN');
-
-COMMIT;
-
--- -----------------------------------------------------
--- Data for table `video_switch`.`task_types`
--- -----------------------------------------------------
-START TRANSACTION;
-USE `video_switch`;
-INSERT INTO `video_switch`.`task_types` (`id`, `name`, `description`) VALUES (NULL, 'CONNECT', 'Connect incoming and outgoing channels. Arg1: incoming channel id. Arg2: outhoing channel id.');
-INSERT INTO `video_switch`.`task_types` (`id`, `name`, `description`) VALUES (NULL, 'SYNC', 'Re-read the channel_details. New data has been added to the table.');
 
 COMMIT;
