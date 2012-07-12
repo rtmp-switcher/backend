@@ -87,16 +87,28 @@ sub createFIFOs() {
  };
 };
 
+sub parseFfmpegLog($) {
+  _log "kkkk";
+};
+
 # Launches handler for the outgoing channel
 # Returns the pid of the launched process
 # Input argument 1: Incoming channel ID
 # Input argument 2: Outgoing channel ID
+my $wait_for_input;
 sub launchOutChanHandler($ $) {
   my $id_in = shift;
   my $id_out = shift;
 
-  my $cmd = "ffmpeg -i " . getFIFOname($id_in) . getChanCmd($id_out);
+  my $cmd = "ffmpeg -i " . "/home/vit/rec.flv " . getChanCmd($id_out);
   my $pid = open(PH, "$cmd 2>&1 |");
+
+  $wait_for_input = AnyEvent->io (
+      fh   => \*PH,
+      poll => "r",
+      cb   => sub { my $tst =  <PH>; _log $tst; }
+  );
+
   _log $cmd;
   return $pid;
 };
@@ -127,8 +139,15 @@ InitDbCache($dbh);
 cleanProcesses();
 createFIFOs();
 
+# enable event loop
+my $cv = AnyEvent->condvar;
+
 launchInChanHandler(1);
-launchOutChanHandler(1, 5);
+launchOutChanHandler(2, 5);
+
+# Wait for events
+#AnyEvent->condvar->recv;
+
 # Finalization
 DoneDbCache();
 cleanProcesses();

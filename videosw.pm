@@ -215,8 +215,9 @@ sub getChanCmd($) {
    my $chan_type = getChanType($id);
    if($chan_type eq getChanTypeId('RTMP_IN')) {
       # Forming command for the incoming channel
-      $res = "rtmpdump -V -v -r \"" . $row->{"URL"} . "\" -y \"streams/live\" -W \"http://" . $row->{"SWFURL"} .
-             "\" -p \"http://" . $row->{"PAGEURL"} . "\" -a \"" . $row->{"APP"} . "\" ";
+      $res = "rtmpdump -V -v -r \"" . $row->{"URL"} . "\" -y \"" . $row->{"PLAYPATH"} .
+             "\"  -W \"http://" . $row->{"SWFURL"} .  "\" -p \"http://" . $row->{"PAGEURL"} .
+             "\" -a \"" . $row->{"APP"} . "\" ";
    } elsif($chan_type eq getChanTypeId('RTMP_OUT')) {
       # Forming command for the outgoing channel
       my $url = $row->{"URL"};
