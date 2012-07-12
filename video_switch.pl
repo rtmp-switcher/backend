@@ -12,6 +12,7 @@ use Carp::Assert;
 use DBI;
 use Data::Table;
 use POSIX qw(mkfifo);
+#use Linux::Inotify2;
 
 # Global configuration structure
 my %global_cfg;
@@ -19,14 +20,48 @@ my %global_cfg;
 # Database handle
 my $dbh;
 
-## MySql database name
-$global_cfg{data_source} = "video_switch:video.perestroike2.net";
-## Database user
-$global_cfg{db_user} = "video_switch";
-## Database user's password
-$global_cfg{db_pswd} = "";
-## Directory for IPC resources (named pipes and message queues)
-$global_cfg{ipc_dir} = "/tmp";
+sub parse_config ($) {
+   my $UP = shift;
+   my $cfg_fname = '/home/vit/.videoswitcher/videoswitcher.conf';
+
+   my ($var, $value);
+
+   open CFG, "<$cfg_fname" or log_die ("Couldn't open cfg-file '$cfg_fname': $!");
+   while (<CFG>) {
+    chomp;
+    s/#.*//;
+    s/^\s+//;
+    s/\s+$//;
+    next unless length;
+    ($var, $value) = split(/[=|\s ]{1,}/, $_, 2);
+    $$UP{$var} = $value;
+   }
+ return 1;
+};
+
+sub get_cfg_param ($ $) {
+  my ($str, $UP)=@_;
+
+  if(!exists $$UP{$str}) {
+  		log_die ("Can't find parameter '$str' in the configuration file");
+  };
+
+  return $$UP{$str};
+}
+
+# Read the configuration file
+# Configuration parameters are written into global_cfg hash
+sub get_config () {
+
+   my %cfg=();
+
+   parse_config(\%cfg);
+   $global_cfg{data_source} = get_cfg_param("data_source", \%cfg);
+   $global_cfg{db_user} = get_cfg_param("db_user", \%cfg);
+   $global_cfg{db_pswd} = get_cfg_param("db_pswd", \%cfg);
+   $global_cfg{ipc_dir} = get_cfg_param("ipc_dir", \%cfg);
+};
+
 
 ## Database queries caching
 {
@@ -204,7 +239,7 @@ sub getOutCmd($) {
    my $r = $t->rowHashRef(0);
    my $url = $r->{"URL"};
    if((defined($r->{"TCURL"})) && ($r->{"TCURL"})) { $url .= $r->{"TCURL"}; };
-   return " -codec copy -f flv \"" . $url . "\"";
+   return " -loglevel verbose -codec copy -f flv \"" . $url . "\"";
 };
 
 # Returns the rtmpdump command line to catch the RTMP stream coming from the incoming channel
@@ -224,8 +259,23 @@ sub getInCmd($) {
    # rtmpdump -v -r rtmp://flash69.ustream.tv/ustreamVideo/10107870 -y "streams/live" -W "http://static-cdn1.ustream.tv/swf/live/viewer:64.swf?vrsl=c:236&ulbr=100" -p "http://www.ustream.tv/channel/titanium-sportstiming" -a "ustreamVideo/10107870" -o -
 }
 
+# Removes FIFO if it exists. Creates named pipe after.
+# Input argument: FIFO path
+sub reCreateFIFO($) {
+  my $fname = shift;
+
+  if(-e $fname) {
+     _log "FIFO '$fname' exists. Removing";
+     unlink($fname) or log_die "Can't remove '$fname': $!";
+  }
+
+  # Making named pipe
+  mkfifo($fname, 0600) or log_die "mkfifo($fname) failed: $!";
+  _log "FIFO has been (re-)created: '" . $fname . "'";
+};
+
 # Creates named pipes. One pipe for every incoming channel
-sub createFIFO() {
+sub createFIFOs() {
   my $ch_tbl = getChansByType(getChanTypeId("RTMP_IN"));
 
   for (my $i = 0; $i < $ch_tbl->nofRow; $i++) {
@@ -233,16 +283,38 @@ sub createFIFO() {
     my $fname = getFIFOname($r->{"ID"});
 
     # First - remove existing FIFOs. Just to clean up everything.
-    if (-e $fname) {
-       _log "FIFO '$fname' exists. Removing";
-       unlink($fname) or log_die "Can't remove '$fname': $!";
-    }
+    reCreateFIFO($fname);
 
-    # Making named pipes
-    mkfifo($fname, 0600) or log_die "mkfifo($fname) failed: $!";
     _log "FIFO for channel '" . $r->{"NAME"} . "' has been created: '" . $fname . "'";
  };
 };
+
+# Launches handler for the outgoing channel
+# Returns the pid of the launched process
+# Input argument 1: Incoming channel ID
+# Input argument 2: Outgoing channel ID
+sub launchOutChanHandler($ $) {
+  my $id_in = shift;
+  my $id_out = shift;
+
+  my $cmd = "ffmpeg -i " . getFIFOname($id_in) . getOutCmd($id_out);
+  my $pid = open(PH, "$cmd 2>&1 |");
+  _log $cmd;
+  return $pid;
+};
+
+# Launches incoming channel handler
+# Returns the pis of the launched process
+# Input argument: Incoming channel ID
+sub launchInChanHandler($) {
+  my $id = shift;
+
+  my $cmd = getInCmd($id);
+  _log $cmd;
+}
+
+# Parsing configuration file
+get_config();
 
 # Database connection
 $dbh = DBI->connect("DBI:mysql:" . $global_cfg{data_source},
@@ -255,7 +327,7 @@ _log "Connected to the database " . $global_cfg{data_source};
 # Initializing the caches
 InitDbCache($dbh);
 
-createFIFO();
+createFIFOs();
 
 # Example:
 print "RTMP_IN: " . getChanTypeId("RTMP_IN") . "\n";
@@ -265,8 +337,8 @@ print "Channel type DOWN: " . getChanStateId("DOWN") . "\n";
 
 _log getInCmd(1);
 
-_log getOutCmd(5);
-
+launchInChanHandler(1);
+launchOutChanHandler(1, 5);
 # Finalization
 DoneDbCache();
 $dbh->disconnect();

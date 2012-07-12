@@ -1,0 +1,10 @@
+## Configuration file of video switcher
+
+## MySql database name. database:host
+data_source = video_switch:video.perestroike2.net
+## Database user
+db_user = video_switch
+## Database user's password
+db_pswd = password 
+## Directory for IPC resources (named pipes and message queues)
+ipc_dir = /tmp
