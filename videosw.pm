@@ -8,21 +8,55 @@ package videosw;
 require Exporter;   
 use DBI;
 use Data::Table;
+use Carp::Assert;
 
 @ISA = qw(Exporter); 
-@EXPORT = qw(parse_config get_cfg_param InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die);
+@EXPORT = qw(parse_config InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die getChanTypeId getChanCmd);
 
 use strict;
 use vars qw(@ISA @EXPORT $VERSION);
 
 # Logs message to stderr
+sub _log($);
+
+# Replacement to the die subroutine. Calls _log subroutine
+sub log_die($);
+
+# Parse config file
+sub parse_config ($);
+
+# Initialize database handling routines of this modules
+# Input parameter: Database handle
+sub InitDbCache($);
+
+# Database handling routines finalization
+sub DoneDbCache();
+
+# Registers SQL-statement in the system
+# Param 1: SQL-statement alias (to be used in calls to GetCachedDbTable and GetCachedDbValue)
+# Param 2: SQL statement itself (can and typically contains "?" placeholders for the binding vars
+# Param 3: 1 if result of the query should be cached. 0 if the query should be executed every time
+sub RegisterSQL($ $ $);
+
+sub GetCachedDbValue($ $);
+
+sub GetCachedDbTable($ $);
+
+# Get channel type id by its name
+sub getChanTypeId($);
+
+# Returns command line for the channel depending on its type
+# Input argument: channel id
+sub getChanCmd($);
+
+################################################################################
+
 sub _log($) {
   my $str = shift;
 
   print STDERR "$str\n";
 };
 
-# Replacement to the die subroutine. Calls _log subroutine
 sub log_die($) {
  my $str = shift;
 
@@ -31,6 +65,7 @@ sub log_die($) {
  die $str;
 };
 
+# Parse config file
 sub parse_config ($) {
    my $UP = shift;
    my $cfg_fname = '/home/vit/.videoswitcher/videoswitcher.conf';
@@ -50,16 +85,6 @@ sub parse_config ($) {
  return 1;
 };
 
-sub get_cfg_param ($ $) {
-  my ($str, $UP)=@_;
-
-  if(!exists $$UP{$str}) {
-  		log_die ("Can't find parameter '$str' in the configuration file");
-  };
-
-  return $$UP{$str};
-}
-
 ## Database queries caching
 {
   # Prepared database statements
@@ -71,16 +96,25 @@ sub get_cfg_param ($ $) {
   # Database handle
   my $db;
 
-  sub InitDbCache($) { $db = shift; };
+  sub InitDbCache($) {
+    $db = shift;
+
+    # Channel types dictionary
+    RegisterSQL("chan_types", "SELECT id FROM channel_types WHERE chan_type = ?", 1);
+
+    # Retrieves channel type for the specified channel
+    RegisterSQL("chan_type_by_id", "SELECT chan_type FROM channels WHERE id = ?", 1);
+
+    # Get the latest and greatest channels params from the channel_details table
+    RegisterSQL("chan_details", "SELECT app, playPath, flashVer, swfUrl, url, pageUrl, tcUrl FROM channel_details ".
+                              "WHERE tm_created = (SELECT MAX(tm_created) FROM channel_details WHERE channel = ?) " .
+                              "AND channel = ?", 0);
+  };
 
   sub DoneDbCache() {
     foreach (keys %st) { $st{$_}->finish(); };
   };
 
-  # Registers SQL-statement in the system
-  # Param 1: SQL-statement alias (to be used in calls to GetCachedDbTable and GetCachedDbValue)
-  # Param 2: SQL statement itself (can and typically contains "?" placeholders for the binding vars
-  # Param 3: 1 if result of the query should be cached. 0 if the query should be executed every time
   sub RegisterSQL($ $ $) {
     my $key = shift;
 
@@ -141,6 +175,49 @@ sub get_cfg_param ($ $) {
 	return \%r;
      };
   };
+};
+
+# Get channel type id by its name
+sub getChanTypeId($) {
+   my @args = ($_[0]);
+   return  GetCachedDbValue("chan_types", \@args);
+};
+
+# Get channel type id for the specified channel id
+sub getChanType($) {
+   my @args = ($_[0]);
+   return  GetCachedDbValue("chan_type_by_id", \@args);
+};
+
+# Returns command line for the channel depending on its type
+# Input argument: channel id
+sub getChanCmd($) {
+   my $id = shift;
+   my @args = ($id, $id);
+
+   my $cd = GetCachedDbTable("chan_details", \@args);
+   assert($cd->isEmpty ne 1);
+   assert($cd->nofRow eq 1);
+
+   # Creating command line based on the query results
+   my $row = $cd->rowHashRef(0);
+   my $res; # Resulting string
+
+   my $chan_type = getChanType($id);
+   if($chan_type eq getChanTypeId('RTMP_IN')) {
+      # Forming command for the incoming channel
+      $res = "rtmpdump -V -v -r \"" . $row->{"URL"} . "\" -y \"streams/live\" -W \"http://" . $row->{"SWFURL"} .
+             "\" -p \"http://" . $row->{"PAGEURL"} . "\" -a \"" . $row->{"APP"} . "\" ";
+   } elsif($chan_type eq getChanTypeId('RTMP_OUT')) {
+      # Forming command for the outgoing channel
+      my $url = $row->{"URL"};
+      if((defined($row->{"TCURL"})) && ($row->{"TCURL"})) { $url .= $row->{"TCURL"}; };
+      $res = " -loglevel verbose -codec copy -f flv \"" . $url . "\"";
+   } else {
+      _log "Unknown channel type " . $chan_type . " for the channel " . $id;
+   };
+
+   return $res;
 };
 
 1;
