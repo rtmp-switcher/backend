@@ -11,6 +11,7 @@ use strict;
 use videosw;
 use Carp::Assert;
 use POSIX qw(mkfifo);
+use AnyEvent;
 #use Linux::Inotify2;
 
 # Global configuration structure
@@ -66,6 +67,11 @@ sub reCreateFIFO($) {
   _log "FIFO has been (re-)created: '" . $fname . "'";
 };
 
+# Killing all the ffmpeg and rtmpdumps
+sub cleanProcesses() {
+  system("killall -9 ffmpeg rtmpdump 2> /dev/null");
+};
+
 # Creates named pipes. One pipe for every incoming channel
 sub createFIFOs() {
   my $ch_tbl = getChansByType(getChanTypeId("RTMP_IN"));
@@ -96,7 +102,7 @@ sub launchOutChanHandler($ $) {
 };
 
 # Launches incoming channel handler
-# Returns the pis of the launched process
+# Returns the pid of the launched process
 # Input argument: Incoming channel ID
 sub launchInChanHandler($) {
   my $id = shift;
@@ -118,12 +124,14 @@ _log "Connected to the database " . $global_cfg{data_source};
 
 # Initializing the caches
 InitDbCache($dbh);
-
+cleanProcesses();
 createFIFOs();
 
 launchInChanHandler(1);
 launchOutChanHandler(1, 5);
 # Finalization
 DoneDbCache();
+cleanProcesses();
+
 $dbh->disconnect();
 
