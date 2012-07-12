@@ -68,7 +68,16 @@ sub log_die($) {
 # Parse config file
 sub parse_config ($) {
    my $UP = shift;
-   my $cfg_fname = '/home/vit/.videoswitcher/videoswitcher.conf';
+
+   my $cfg_fname = '~/.videoswitcher/videoswitcher.conf';
+   # Receipe 7.3 from Perl CookBook: http://docstore.mik.ua/orelly/perl/cookbook/ch07_04.htm
+   $cfg_fname =~ s{ ^ ~ ( [^/]* ) }
+              { $1
+                    ? (getpwnam($1))[7]
+                    : ( $ENV{HOME} || $ENV{LOGDIR}
+                         || (getpwuid($>))[7]
+                       )
+   }ex;
 
    my ($var, $value);
 
