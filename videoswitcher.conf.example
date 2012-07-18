@@ -8,3 +8,5 @@ db_user = video_switch
 db_pswd = password 
 ## Directory for IPC resources (named pipes and message queues)
 ipc_dir = /tmp
+## Directory where tasks are placed
+tasks_dir = /tmp/video_tasks

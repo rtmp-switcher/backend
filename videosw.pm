@@ -74,7 +74,7 @@ sub getChanCmd($);
   };
 
   sub _log($) {
-    my $str = shift . "\n";
+    my $str = scalar localtime() . " " . shift . "\n";
 
     print STDERR $str;
     if(defined($log_file)) {
