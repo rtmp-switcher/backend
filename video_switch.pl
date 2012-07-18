@@ -12,7 +12,7 @@ use videosw;
 use Carp::Assert;
 use POSIX qw(mkfifo);
 use AnyEvent;
-#use Linux::Inotify2;
+use Linux::Inotify2;
 
 # Global configuration structure
 my %global_cfg;
@@ -87,29 +87,39 @@ sub createFIFOs() {
  };
 };
 
+# Controlling ffmpeg output
 sub parseFfmpegLog($) {
-  _log "kkkk";
+# Do nothing for now
 };
+
+# Controlling ffmpeg output
+sub parseRTMPLog($) {
+# Do nothing for now
+};
+
+
+# Launched processes
+# Key: 'out' or 'in'
+# Value: AnyEvent added to read the process stderr/stdout
+my %launched_proc;
 
 # Launches handler for the outgoing channel
 # Returns the pid of the launched process
 # Input argument 1: Incoming channel ID
-# Input argument 2: Outgoing channel ID
-my $wait_for_input;
 sub launchOutChanHandler($ $) {
   my $id_in = shift;
   my $id_out = shift;
 
-  my $cmd = "ffmpeg -i " . "/home/vit/rec.flv " . getChanCmd($id_out);
-  my $pid = open(PH, "$cmd 2>&1 |");
-
-  $wait_for_input = AnyEvent->io (
-      fh   => \*PH,
+  my $cmd = "ffmpeg -re -i " . getFIFOname($id_in) . getChanCmd($id_out);
+  my $pid = open(IH, "$cmd 2>&1 |");
+  $launched_proc{"OUT"} = AnyEvent->io (
+      fh   => \*IH,
       poll => "r",
-      cb   => sub { my $tst =  <PH>; _log $tst; }
+      cb   => sub { my $tst =  <IH>; parseFfmpegLog($tst); }
   );
 
-  _log $cmd;
+  _log "Launched: " . $cmd;
+
   return $pid;
 };
 
@@ -120,12 +130,57 @@ sub launchInChanHandler($) {
   my $id = shift;
 
   my $cmd = getChanCmd($id) . "-o " . getFIFOname($id);
-  _log $cmd;
+
+  my $pid = open(PH, "$cmd 2>&1 |");
+
+  $launched_proc{"IN"} = AnyEvent->io (
+      fh   => \*PH,
+      poll => "r",
+      cb   => sub { my $tst =  <PH>; parseRTMPLog($tst); }
+  );
+
+  _log "Launched: " . $cmd;
+
+  return $pid;
 }
 
+# Handles new tasks. After processing the task, removes the task file
+# Input parameter: Name of the task file
+sub handleTask($) {
+   my $fname = shift;
+  _log "Reading task from the file '" . $fname . "'";
+};
 
-initLogFile "/tmp/log.txt";
-_log "Test";
+# Initializes tasks listener
+{
+  my $inotify_w;
+  sub initTasksListener() {
+    my $tasks_dir = $global_cfg{"tasks_dir"};
+
+    _log "Folder to be monitored for new task files: '" . $tasks_dir . "'";
+
+    # Create the directory if it does not exist
+    unless(-e $tasks_dir or mkdir $tasks_dir) {
+		log_die "Unable to create $tasks_dir";
+    }
+
+    # Starting to monitor
+    my $dir_inotify = Linux::Inotify2->new;
+
+    my $dir_w = $dir_inotify->watch(
+      $tasks_dir,
+      IN_MOVED_TO|IN_CLOSE_WRITE,
+      sub {
+        my $e = shift;
+        handleTask($e->fullname);
+      }
+    );
+
+    $inotify_w = AnyEvent->io (
+       fh => $dir_inotify->fileno, poll => 'r', cb => sub { $dir_inotify->poll }
+    );
+  };
+};
 
 # Parsing configuration file
 parse_config(\%global_cfg);
@@ -146,11 +201,13 @@ createFIFOs();
 # enable event loop
 my $cv = AnyEvent->condvar;
 
+initTasksListener();
+
 launchInChanHandler(1);
-launchOutChanHandler(2, 5);
+launchOutChanHandler(1, 5);
 
 # Wait for events
-#AnyEvent->condvar->recv;
+AnyEvent->condvar->recv;
 
 # Finalization
 DoneDbCache();
