@@ -1,22 +1,30 @@
 ##
-## Common subroutines used by RTMP video switcher backend scripts 
-## 
+## Common subroutines used by RTMP video switcher backend scripts
+##
 ## Copyright Vitaly Repin <vitaly.repin@gmail.com>.  GPL.
-## 
+##
 
 package videosw;
-require Exporter;   
+require Exporter;
 use DBI;
 use Data::Table;
+use IO::File;
 use Carp::Assert;
 
-@ISA = qw(Exporter); 
-@EXPORT = qw(parse_config InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die getChanTypeId getChanCmd);
+@ISA = qw(Exporter);
+@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die getChanTypeId getChanCmd);
 
 use strict;
 use vars qw(@ISA @EXPORT $VERSION);
 
-# Logs message to stderr
+# Initializes the log file
+# If the file does not exists, creates it. Otherwise opens in "append" mode.
+# If it was not possible to open the file, error message is printed to stderr and the script dies
+# Input parameter: path to the log file
+sub initLogFile($);
+
+# Logs message to stderr and log file (only if it was initialized by initLogFile subroutine)
+# Input parameter: message to log
 sub _log($);
 
 # Replacement to the die subroutine. Calls _log subroutine
@@ -51,16 +59,34 @@ sub getChanCmd($);
 
 ################################################################################
 
-sub _log($) {
-  my $str = shift;
+# Logging functions
+{
+  # Log file handle
+  my $log_file = undef;
 
-  print STDERR "$str\n";
+  sub initLogFile($) {
+    my $fname = shift;
+
+    $log_file = IO::File->new($fname, "a+") or log_die "Couldn't open log file $fname: $!\n";
+    $log_file->autoflush(1);
+
+    return 0;
+  };
+
+  sub _log($) {
+    my $str = shift . "\n";
+
+    print STDERR $str;
+    if(defined($log_file)) {
+        $log_file->print($str);
+    };
+  };
 };
 
 sub log_die($) {
  my $str = shift;
 
- _log  "<critical-error: $str>";
+ _log  "<critical-error>$str</critical-error>";
 
  die $str;
 };

@@ -123,6 +123,10 @@ sub launchInChanHandler($) {
   _log $cmd;
 }
 
+
+initLogFile "/tmp/log.txt";
+_log "Test";
+
 # Parsing configuration file
 parse_config(\%global_cfg);
 
