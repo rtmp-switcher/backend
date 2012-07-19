@@ -10,6 +10,7 @@ use DBI;
 use Data::Table;
 use IO::File;
 use Carp::Assert;
+use Config;
 
 @ISA = qw(Exporter);
 @EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die getChanTypeId getChanCmd);
@@ -94,16 +95,26 @@ sub log_die($) {
 # Parse config file
 sub parse_config ($) {
    my $UP = shift;
+   my $cfg_fname;
 
-   my $cfg_fname = '~/.videoswitcher/videoswitcher.conf';
-   # Receipe 7.3 from Perl CookBook: http://docstore.mik.ua/orelly/perl/cookbook/ch07_04.htm
-   $cfg_fname =~ s{ ^ ~ ( [^/]* ) }
-              { $1
-                    ? (getpwnam($1))[7]
-                    : ( $ENV{HOME} || $ENV{LOGDIR}
-                         || (getpwuid($>))[7]
+   ## MSWindows vs Linux initial config default path
+   if ( $Config{osname} !~ /mswin/i ) {
+    ## default config in Linux
+    $cfg_fname = '~/.videoswitcher/videoswitcher.conf';
+    # Receipe 7.3 from Perl CookBook: http://docstore.mik.ua/orelly/perl/cookbook/ch07_04.htm
+    $cfg_fname =~ s{ ^ ~ ( [^/]* ) }
+               { $1
+                     ? (getpwnam($1))[7]
+                     : ( $ENV{HOME} || $ENV{LOGDIR}
+                          || (getpwuid($>))[7]
                        )
-   }ex;
+               }ex;
+
+   } else {
+     ## default config in Windows
+     $cfg_fname = 'c:\videosw\videoswitcher.conf';
+
+   } ## end if
 
    my ($var, $value);
 
@@ -115,6 +126,14 @@ sub parse_config ($) {
     s/\s+$//;
     next unless length;
     ($var, $value) = split(/[=|\s ]{1,}/, $_, 2);
+
+    ## remove '' and ""
+    $value=~s/^['"]//;
+    $value=~s/['"];*$//;
+
+    ## config keys to lowercase
+    $var = lc $var;
+
     $$UP{$var} = $value;
    }
  return 1;
