@@ -109,11 +109,9 @@ sub parse_config ($) {
                           || (getpwuid($>))[7]
                        )
                }ex;
-
    } else {
      ## default config in Windows
      $cfg_fname = 'c:\videosw\videoswitcher.conf';
-
    } ## end if
 
    my ($var, $value);

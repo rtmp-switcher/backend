@@ -50,7 +50,7 @@ sub getChansByType($) {
 sub getFIFOname($) {
   my $id = shift;
 
-  return $global_cfg{ipc_dir} . "/video_sw-" . $id . ".in";
+  return $global_cfg{"ipc_dir"} . "/video_sw-" . $id . ".in";
 };
 
 # Removes FIFO if it exists. Creates named pipe after.
@@ -230,12 +230,12 @@ sub handleTask($) {
 parse_config(\%global_cfg);
 
 # Database connection
-$dbh = DBI->connect("DBI:mysql:" . $global_cfg{data_source},
-                    $global_cfg{db_user},
-                    $global_cfg{db_pswd}, { RaiseError => 0, AutoCommit => 0 })
+$dbh = DBI->connect("DBI:mysql:" . $global_cfg{"data_source"},
+                    $global_cfg{"db_user"},
+                    $global_cfg{"db_pswd"}, { RaiseError => 0, AutoCommit => 0 })
 or log_die "Database connection not made: $DBI::errstr";
 
-_log "Connected to the database " . $global_cfg{data_source};
+_log "Connected to the database " . $global_cfg{"data_source"};
 
 # Initializing the caches
 InitDbCache($dbh);
