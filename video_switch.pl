@@ -11,6 +11,7 @@ use strict;
 use videosw;
 use Carp::Assert;
 use POSIX qw(mkfifo);
+use File::Spec;
 use AnyEvent;
 use Linux::Inotify2;
 
@@ -144,16 +145,59 @@ sub launchInChanHandler($) {
   return $pid;
 }
 
+# Handler for the "PING" task
+# Input parameter 1: task file name
+# Input parameter 2: 1st line of the task file. Trimmed.
+sub handlePing($ $) {
+  _log "Got the PING: '" . $_[1] . "'";
+};
+
+# Handler for the "CONNECT" task
+#
+sub handleConnect($ $) {
+  _log "Got CONNECT: '" . $_[1] . "'";
+};
+
 # Handles new tasks. After processing the task, removes the task file
 # Input parameter: Name of the task file
 sub handleTask($) {
    my $fname = shift;
-  _log "Reading task from the file '" . $fname . "'";
+   _log "Reading task from the file '$fname'";
+
+   # Handler for the unknown task
+   sub handleDefault($ $) {
+     _log "The task '" . shift . "' is unknown. Not processed BUT WILL BE REMOVED!.";
+   };
+
+   # Setting the handler for the task based on the file name pattern
+   my $handler = \&handleDefault;
+   if($fname =~ m/^(\w+)-\d+\.task$/) {
+     if($1 eq 'PING') {
+       $handler = \&handlePing;
+     } elsif($1 eq 'CONNECT') {
+       $handler = \&handleConnect;
+     };
+   }
+
+   # Reading first line of the file
+   my $full_fname = File::Spec->catfile($global_cfg{"tasks_dir"}, $fname);
+   open(INP, "< $full_fname") or log_die "Couldn't open $full_fname for reading: $!";
+   my $cmd = <INP>;
+   if(!defined($cmd)) { $cmd = ''; }; # To handle empty files
+   chomp($cmd);
+   $handler->($fname, $cmd);
+   close INP;
+
+   # Removing the task file from the file system
+   unlink($full_fname) or log_die "Can't delete $full_fname: $!";
+   _log "Removed handled task '$fname'";
 };
 
 # Initializes tasks listener
 {
   my $inotify_w;
+
+  # Initializes tasks listener
   sub initTasksListener() {
     my $tasks_dir = $global_cfg{"tasks_dir"};
 
@@ -172,7 +216,7 @@ sub handleTask($) {
       IN_MOVED_TO|IN_CLOSE_WRITE,
       sub {
         my $e = shift;
-        handleTask($e->fullname);
+        handleTask($e->name);
       }
     );
 
