@@ -8,3 +8,4 @@ Perl modules used:
 http://search.cpan.org/~ezdb/Data-Table-1.63/Table.pm
 http://search.cpan.org/dist/Carp-Assert/
 http://search.cpan.org/~mlehmann/Linux-Inotify2-1.22/Inotify2.pm
+http://search.cpan.org/~makamaka/JSON-2.53/lib/JSON.pm

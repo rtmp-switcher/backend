@@ -14,6 +14,7 @@ use POSIX qw(mkfifo);
 use File::Spec;
 use AnyEvent;
 use Linux::Inotify2;
+use JSON;
 
 # Global configuration structure
 my %global_cfg;
@@ -90,12 +91,20 @@ sub createFIFOs() {
 
 # Controlling ffmpeg output
 sub parseFfmpegLog($) {
-# Do nothing for now
+  my $str = shift;
+  chomp($str);
+
+  # Do nothing for now
+  _log "ffmpeg: " . $str;
 };
 
 # Controlling ffmpeg output
 sub parseRTMPLog($) {
-# Do nothing for now
+  my $str = shift;
+  chomp($str);
+
+  # Do nothing for now
+  _log "rtmpdump: " . $str;
 };
 
 
@@ -146,16 +155,30 @@ sub launchInChanHandler($) {
 }
 
 # Handler for the "PING" task
-# Input parameter 1: task file name
-# Input parameter 2: 1st line of the task file. Trimmed.
 sub handlePing($ $) {
   _log "Got the PING: '" . $_[1] . "'";
 };
 
 # Handler for the "CONNECT" task
-#
 sub handleConnect($ $) {
-  _log "Got CONNECT: '" . $_[1] . "'";
+  my $json_txt = $_[1];
+  _log "Got CONNECT: '" . $json_txt . "'";
+
+  # @chans will store ids of the channels
+  my $json = new JSON;
+  my $chans_r = $json->decode($json_txt);
+  my @chans = @$chans_r;
+  assert(@chans eq 2);
+
+  my %chan_tps;
+  foreach(@chans) { $chan_tps{$_} = getChanType($_); };
+  # One of the channels should be incoming, another - outgoing
+  assert($chan_tps{$chans[0]} ne $chan_tps{$chans[1]});
+
+  # Launching the channel handlers
+  cleanProcesses();
+  launchInChanHandler($chans[1]);
+  launchOutChanHandler($chans[1], $chans[0]);
 };
 
 # Handles new tasks. After processing the task, removes the task file

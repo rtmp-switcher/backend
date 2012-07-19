@@ -13,7 +13,7 @@ use Carp::Assert;
 use Config;
 
 @ISA = qw(Exporter);
-@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die getChanTypeId getChanCmd);
+@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die getChanTypeId getChanType getChanCmd);
 
 use strict;
 use vars qw(@ISA @EXPORT $VERSION);
@@ -50,6 +50,9 @@ sub RegisterSQL($ $ $);
 sub GetCachedDbValue($ $);
 
 sub GetCachedDbTable($ $);
+
+# Get channel type id for the specified channel id
+sub getChanType($);
 
 # Get channel type id by its name
 sub getChanTypeId($);
@@ -258,14 +261,14 @@ sub getChanCmd($) {
    my $chan_type = getChanType($id);
    if($chan_type eq getChanTypeId('RTMP_IN')) {
       # Forming command for the incoming channel
-      $res = "rtmpdump -V -v -r \"" . $row->{"URL"} . "\" -y \"" . $row->{"PLAYPATH"} .
+      $res = "rtmpdump -v -r \"" . $row->{"URL"} . "\" -y \"" . $row->{"PLAYPATH"} .
              "\"  -W \"http://" . $row->{"SWFURL"} .  "\" -p \"http://" . $row->{"PAGEURL"} .
              "\" -a \"" . $row->{"APP"} . "\" ";
    } elsif($chan_type eq getChanTypeId('RTMP_OUT')) {
       # Forming command for the outgoing channel
       my $url = $row->{"URL"};
       if((defined($row->{"TCURL"})) && ($row->{"TCURL"})) { $url .= $row->{"TCURL"}; };
-      $res = " -loglevel verbose -codec copy -f flv \"" . $url . "\"";
+      $res = " -codec copy -f flv \"" . $url . "\"";
    } else {
       _log "Unknown channel type " . $chan_type . " for the channel " . $id;
    };
