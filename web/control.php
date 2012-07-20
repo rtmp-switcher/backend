@@ -7,11 +7,12 @@ require dirname(__FILE__) . '/utils/KLogger.php';
 $hostname = "localhost";
 $dbname   = "video_switch";
 $username = "video_switch";
-$password = "";
+$password = "RhjkkbR5%";
+
 
 date_default_timezone_set("Europe/Vatican"); # For KLogger not to show warnings
 $log = new KLogger('/tmp/', KLogger::DEBUG); # Specify the log directory
-$log->logInfo('control.php started'); //Prints to the log file
+$log->logInfo("control.php started, IP: " . $_SERVER['REMOTE_ADDR']);
 
 try {
     $dbh = new PDO("mysql:host=$hostname;dbname=$dbname", $username, $password);
@@ -22,11 +23,21 @@ try {
 	       "WHERE channels.chan_type = channel_types.id AND channels.is_enabled = TRUE";
 
     $stmt = $dbh->query($sql);
+
+	// We need to return the latest valid URL for every channel. Stored in channel_details
+	$sql = "SELECT url FROM channel_details WHERE tm_created = (SELECT MAX(tm_created) FROM channel_details " .
+	       "WHERE channel = ?) AND channel = ?";
+    $details = $dbh->prepare($sql);
+
 	$chans = array();
 	while($obj = $stmt->fetchObject()) {
-            array_push($chans, $obj);
+        array_push($chans, $obj);
+	    $details->execute(array($obj->{'id'}, $obj->{'id'}));
+	    $obj->{'lastUrl'} = "";
+	    while($r = $details->fetch()) { $obj->{'lastUrl'} = $r[0]; };
 	}
 	echo json_encode($chans);
+	$log->logInfo("getChannels request is handled");
     }
 
     if(isset($_POST['dataType'])) {
@@ -46,10 +57,12 @@ try {
 						  $chan_data->{'tcurl'}));
 
 				if(!$r) {
-					$log->logInfo("Error inserting channel details '" . serialize($_POST['data']) . "':" .
+				    $log->logInfo("Error inserting channel details '" . serialize($_POST['data']) . "':" .
 						      serialize($q->errorInfo()));
-				};
-	    			break;
+				} else {
+                    $log->logInfo("channelDetails #" . $chan_data->{"channel"} . " are inserted into the database");
+                };
+				break;
 	    default:
 	    			$log->logInfo("Unknown dataType: " . $_POST['dataType']);
 	};
