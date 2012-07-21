@@ -19,25 +19,24 @@ try {
 
     // getChannels: returns the channels data
     if(isset($_GET['getChannels'])) {
-	$sql = "SELECT channels.id, channels.name, channels.uri, channel_types.chan_type FROM channels, channel_types " .
-	       "WHERE channels.chan_type = channel_types.id AND channels.is_enabled = TRUE";
+        $sql = "SELECT channels.id, channels.name, channels.uri, channel_types.chan_type FROM channels, channel_types " .
+               "WHERE channels.chan_type = channel_types.id AND channels.is_enabled = TRUE";
 
-    $stmt = $dbh->query($sql);
+        $stmt = $dbh->query($sql);
 
-	// We need to return the latest valid URL for every channel. Stored in channel_details
-	$sql = "SELECT url FROM channel_details WHERE tm_created = (SELECT MAX(tm_created) FROM channel_details " .
-	       "WHERE channel = ?) AND channel = ?";
-    $details = $dbh->prepare($sql);
+        // We need to return the latest valid URL for every channel. Stored in channel_details
+        $sql = "SELECT url  FROM channel_details WHERE channel=? order by tm_created DESC LIMIT 1";
+        $details = $dbh->prepare($sql);
 
-	$chans = array();
-	while($obj = $stmt->fetchObject()) {
-        array_push($chans, $obj);
-	    $details->execute(array($obj->{'id'}, $obj->{'id'}));
-	    $obj->{'lastUrl'} = "";
-	    while($r = $details->fetch()) { $obj->{'lastUrl'} = $r[0]; };
-	}
-	echo json_encode($chans);
-	$log->logInfo("getChannels request is handled");
+	    $chans = array();
+        while($obj = $stmt->fetchObject()) {
+            array_push($chans, $obj);
+            $details->execute(array($obj->{'id'}));
+            $obj->{'last_url'} = "";
+            while($r = $details->fetch()) { $obj->{'last_url'} = $r[0]; };
+        }
+        echo json_encode($chans);
+        $log->logInfo("getChannels request is handled");
     }
 
     if(isset($_POST['dataType'])) {
@@ -46,7 +45,7 @@ try {
 	    			$chan_data = json_decode($_POST['data']);
 				$sql = "INSERT INTO channel_details (channel, app, playPath, flashVer, swfUrl, url, pageUrl, tcUrl) " .
 				       "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-        			$q = $dbh->prepare($sql);
+                $q = $dbh->prepare($sql);
 				$r = $q->execute(array($chan_data->{'channel'},
 						  $chan_data->{'app'},
 						  $chan_data->{'playpath'},
@@ -57,10 +56,10 @@ try {
 						  $chan_data->{'tcurl'}));
 
 				if(!$r) {
-				    $log->logInfo("Error inserting channel details '" . serialize($_POST['data']) . "':" .
-						      serialize($q->errorInfo()));
+					$log->logInfo("Error inserting channel details '" . serialize($_POST['data']) . "':" .
+						           serialize($q->errorInfo()));
 				} else {
-                    $log->logInfo("channelDetails #" . $chan_data->{"channel"} . " are inserted into the database");
+					$log->logInfo("channelDetails #" . $chan_data->{"channel"} . " are inserted into the database");
                 };
 				break;
 	    default:
