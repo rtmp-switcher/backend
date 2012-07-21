@@ -206,7 +206,9 @@ sub launchInChanHandler($ $ $) {
 sub launchOutChanHandler($ $) {
   my ($id_out, $proc_stat) = @_;
 
-   my $cmd = "cat " . getFIFOname($id_out) . " | ffmpeg -i - " . getChanCmd($id_out);
+  my $flv_fname = getBkpFname($id_out);
+
+  my $cmd = "cat " . getFIFOname($id_out) . " | tee $flv_fname | ffmpeg -i - " . getChanCmd($id_out);
 
   my $fname_prefix = File::Spec->catfile($global_cfg{"ffmpeg_log_dir"}, "ffmpeg");
 

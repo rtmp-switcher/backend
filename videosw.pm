@@ -9,11 +9,12 @@ require Exporter;
 use DBI;
 use Data::Table;
 use IO::File;
+use File::Spec;
 use Carp::Assert;
 use Config;
 
 @ISA = qw(Exporter);
-@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getChanCmd my_time my_time_short);
+@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getChanCmd getBkpFname my_time my_time_short);
 
 use strict;
 use vars qw(@ISA @EXPORT $VERSION);
@@ -203,6 +204,9 @@ sub parse_config ($) {
     # Get the latest and greatest channels params from the channel_details table
     RegisterSQL("chan_details", "SELECT app, playPath, flashVer, swfUrl, url, pageUrl, tcUrl FROM channel_details ".
                                 "WHERE channel = ? ORDER BY tm_created DESC LIMIT 1", 0);
+
+    # Get the backup folder for the specified channel id
+    RegisterSQL("bkp_folder", "SELECT bkp_folder FROM channels WHERE id = ?", 0);
   };
 
   sub DoneDbCache() {
@@ -281,6 +285,25 @@ sub getChanTypeId($) {
 sub getChanType($) {
    my @args = ($_[0]);
    return  GetCachedDbValue("chan_type_by_id", \@args);
+};
+
+# Get backup folder for the specified channel id
+sub getBkpFolder($) {
+   my @args = ($_[0]);
+   return  GetCachedDbValue("bkp_folder", \@args);
+};
+
+# Get the current file name for the recording
+sub getBkpFname($) {
+  my $id = shift;
+  my $folder = getBkpFolder($id);
+
+  my $res = "/dev/null";
+  if($folder ne '') {
+    $res = File::Spec->catfile(expand_home_dir($folder), "ch$id-" . my_time() . ".flv");
+  };
+
+  return $res;
 };
 
 # Returns command line for the channel depending on its type
