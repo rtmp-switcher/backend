@@ -10,3 +10,7 @@ db_pswd = password
 ipc_dir = /tmp
 ## Directory where tasks are placed
 tasks_dir = /tmp/video_tasks
+## Directory to write ffmpeg logs to
+ffmpeg_log_dir = ~/.videoswitcher/ffmpeg.logs/
+## Directory to write rtmpdump logs to
+rtmpdump_log_dir = ~/.videoswitcher/rtmpdump.logs/
