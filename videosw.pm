@@ -51,6 +51,9 @@ sub GetCachedDbValue($ $);
 
 sub GetCachedDbTable($ $);
 
+# Get channel type id for the specified channel id
+sub getChanType($);
+
 # Get channel type id by its name
 sub getChanTypeId($);
 
@@ -112,31 +115,43 @@ sub log_die($) {
  die $str;
 };
 
-# Parse config file
-sub parse_config ($) {
-   my $UP = shift;
-   my $cfg_fname;
+# Expands "~" under UNIX. Does nothing under MS Windows platfrom
+# Receipe 7.3 from Perl CookBook: http://docstore.mik.ua/orelly/perl/cookbook/ch07_04.htm
+# Input: path to expand
+# Output: expanded path or original path
+sub expand_home_dir ($) {
+  my $path = shift;
 
-   ## MSWindows vs Linux initial config default path
-   if ( $Config{osname} !~ /mswin/i ) {
-    ## default config in Linux
-    $cfg_fname = '~/.videoswitcher/videoswitcher.conf';
-    # Receipe 7.3 from Perl CookBook: http://docstore.mik.ua/orelly/perl/cookbook/ch07_04.htm
-    $cfg_fname =~ s{ ^ ~ ( [^/]* ) }
+  if ($Config{osname} !~ /mswin/i) {
+    $path =~ s{ ^ ~ ( [^/]* ) }
                { $1
                      ? (getpwnam($1))[7]
                      : ( $ENV{HOME} || $ENV{LOGDIR}
                           || (getpwuid($>))[7]
                        )
-               }ex;
+    }ex;
+  };
 
-   } else {
+  return $path;
+};
+
+# Parse config file
+sub parse_config ($) {
+   my $UP = shift;
+
+   ## default config in UNIX
+   my $cfg_fname = '~/.videoswitcher/videoswitcher.conf';
+
+   ## MSWindows vs Linux initial config default path
+   if ($Config{osname} =~ m/mswin/i) {
      ## default config in Windows
      $cfg_fname = 'c:\videosw\videoswitcher.conf';
+   };
 
-   } ## end if
+   $cfg_fname = expand_home_dir($cfg_fname);
 
    my ($var, $value);
+   my %path_keys = ("rtmpdump_log_dir" => 1, "ffmpeg_log_dir" => 1);
 
    open CFG, "<$cfg_fname" or log_die ("Couldn't open cfg-file '$cfg_fname': $!");
    while (<CFG>) {
@@ -154,9 +169,15 @@ sub parse_config ($) {
     ## config keys to lowercase
     $var = lc $var;
 
+    # Expanding ~ in paths
+    if(exists($path_keys{$var})) {
+      $value = expand_home_dir($value);
+    };
+
     $$UP{$var} = $value;
    }
- return 1;
+
+   return 1;
 };
 
 ## Database queries caching
@@ -181,8 +202,7 @@ sub parse_config ($) {
 
     # Get the latest and greatest channels params from the channel_details table
     RegisterSQL("chan_details", "SELECT app, playPath, flashVer, swfUrl, url, pageUrl, tcUrl FROM channel_details ".
-                              "WHERE tm_created = (SELECT MAX(tm_created) FROM channel_details WHERE channel = ?) " .
-                              "AND channel = ?", 0);
+                                "WHERE channel = ? ORDER BY tm_created DESC LIMIT 1", 0);
   };
 
   sub DoneDbCache() {
@@ -267,7 +287,7 @@ sub getChanType($) {
 # Input argument: channel id
 sub getChanCmd($) {
    my $id = shift;
-   my @args = ($id, $id);
+   my @args = ($id);
 
    my $cd = GetCachedDbTable("chan_details", \@args);
    assert($cd->isEmpty ne 1);
@@ -280,14 +300,14 @@ sub getChanCmd($) {
    my $chan_type = getChanType($id);
    if($chan_type eq getChanTypeId('RTMP_IN')) {
       # Forming command for the incoming channel
-      $res = "rtmpdump -V -v -r \"" . $row->{"URL"} . "\" -y \"" . $row->{"PLAYPATH"} .
+      $res = "rtmpdump -v -r \"" . $row->{"URL"} . "\" -y \"" . $row->{"PLAYPATH"} .
              "\"  -W \"http://" . $row->{"SWFURL"} .  "\" -p \"http://" . $row->{"PAGEURL"} .
              "\" -a \"" . $row->{"APP"} . "\" ";
    } elsif($chan_type eq getChanTypeId('RTMP_OUT')) {
       # Forming command for the outgoing channel
       my $url = $row->{"URL"};
       if((defined($row->{"TCURL"})) && ($row->{"TCURL"})) { $url .= $row->{"TCURL"}; };
-      $res = " -loglevel verbose -codec copy -f flv \"" . $url . "\"";
+      $res = " -codec copy -f flv \"" . $url . "\"";
    } else {
       _log "Unknown channel type " . $chan_type . " for the channel " . $id;
    };
