@@ -10,7 +10,9 @@
 use strict;
 use videosw;
 use Carp::Assert;
-use POSIX qw(mkfifo);
+use POSIX qw(mkfifo strftime :errno_h);
+use IO::File;
+use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
 use File::Spec;
 use AnyEvent;
 use Linux::Inotify2;
@@ -21,6 +23,11 @@ my %global_cfg;
 
 # Database handle
 my $dbh;
+
+# Hash which stores the data about connections
+# Key: id of the outgoing channel
+# Value: Connection data (hash of hashes)
+my %connections;
 
 # Cached SQL statements
 {
@@ -76,7 +83,7 @@ sub cleanProcesses() {
 
 # Creates named pipes. One pipe for every incoming channel
 sub createFIFOs() {
-  my $ch_tbl = getChansByType(getChanTypeId("RTMP_IN"));
+  my $ch_tbl = getChansByType(getChanTypeId("RTMP_OUT"));
 
   for (my $i = 0; $i < $ch_tbl->nofRow; $i++) {
     my $r = $ch_tbl->rowHashRef($i);
@@ -85,78 +92,115 @@ sub createFIFOs() {
     # First - remove existing FIFOs. Just to clean up everything.
     reCreateFIFO($fname);
 
-    _log "FIFO for channel '" . $r->{"NAME"} . "' has been created: '" . $fname . "'";
+    _log "FIFO for outgoing channel '" . $r->{"NAME"} . "' has been created: '" . $fname . "'";
  };
 };
 
-# Controlling ffmpeg output
-sub parseFfmpegLog($) {
-  my $str = shift;
+# Writes sub-process log
+# Input argument 1: file descriptor to write the log to
+# Input argument 2: line to log
+sub writeProcLog($ $) {
+  my ($fh, $str) = @_;
+
   chomp($str);
 
-  # Do nothing for now
-  _log "ffmpeg: " . $str;
+  if($str ne '') {
+#   _log $str;
+    $str = scalar localtime() . " $str\n";
+    $fh->print($str);
+  };
 };
 
-# Controlling ffmpeg output
-sub parseRTMPLog($) {
-  my $str = shift;
-  chomp($str);
+# Launches the sub-process
+# Input argument: hash with the 2 keys defined:
+# cmd: command line to launch
+# fname: the filename prefix to write stderr/stdout of the launched process
+# After successfull execution the sub-routine sets:
+#  - 'fname' to the full path to the log file of the launched process
+#  - 'pid' to the pid of the launched process
+#  - 'event' to the AnyEvent::io object created to monitor the stdout/stderr of the launched process
+sub launchProcess($) {
+  my $proc = shift;
 
-  # Do nothing for now
-  _log "rtmpdump: " . $str;
-};
+  my $cmd = $$proc{"cmd"};
+  my $fname = $$proc{"fname"} . "-" . my_time_short .  ".log";
 
+  # Opening log file
+  my $fh = IO::File->new($fname, "a+") or log_die "Couldn't open '$fname': $!";
+  $fh->autoflush(1);
+  $$proc{"fname"} = $fname;
 
-# Launched processes
-# Key: 'out' or 'in'
-# Value: AnyEvent added to read the process stderr/stdout
-my %launched_proc;
+  _log "Launching '$cmd'";
+  _log "Log file: '$fname'";
 
-# Launches handler for the outgoing channel
-# Returns the pid of the launched process
-# Input argument 1: Incoming channel ID
-sub launchOutChanHandler($ $) {
-  my $id_in = shift;
-  my $id_out = shift;
+  my $log_fd = IO::File->new();
+  $$proc{"log_fd"} = $log_fd;
+  $$proc{"pid"} = $log_fd->open("$cmd 2>&1 |") or log_die "Couldn't launch sub-process: $!";
 
-  my $cmd = "ffmpeg -re -i " . getFIFOname($id_in) . getChanCmd($id_out);
-  my $pid = open(IH, "$cmd 2>&1 |");
-  $launched_proc{"OUT"} = AnyEvent->io (
-      fh   => \*IH,
-      poll => "r",
-      cb   => sub { my $tst =  <IH>; parseFfmpegLog($tst); }
+  # Setting the output as non blocked file handle
+  my $fl = fcntl($log_fd, F_GETFL, 0) or log_die "Couldn't get flags for log_fd: $!";
+
+  fcntl($log_fd, F_SETFL, $fl | O_NONBLOCK) or log_die "Couldn't set flags for log_fd: $!";
+
+  $$proc{"event"} = AnyEvent->io (
+                       fh   => $log_fd,
+                       poll => "r",
+                       cb   => sub {
+                                 my $buf;
+                                 my $rv = sysread($log_fd, $buf, 1024);
+                                 unless(!defined($rv) && $! == EAGAIN) {
+                                     writeProcLog($fh, $buf);
+                                 };
+                               }
   );
 
-  _log "Launched: " . $cmd;
-
-  return $pid;
+  return 1;
 };
 
 # Launches incoming channel handler
 # Returns the pid of the launched process
-# Input argument: Incoming channel ID
-sub launchInChanHandler($) {
-  my $id = shift;
+# Input argument 1: Incoming channel ID
+# Input argument 2: Outgoing channel ID
+# Output argument 3: Reference to hash array to store the process data (pid, cmd etc)
+sub launchInChanHandler($ $ $) {
+  my ($id_in, $id_out, $proc_stat) = @_;
 
-  my $cmd = getChanCmd($id) . "-o " . getFIFOname($id);
+  my $cmd = getChanCmd($id_in) . "-o " . getFIFOname($id_out);
+  my $fname_prefix = File::Spec->catfile($global_cfg{"rtmpdump_log_dir"}, "rtmpdump");
 
-  my $pid = open(PH, "$cmd 2>&1 |");
-
-  $launched_proc{"IN"} = AnyEvent->io (
-      fh   => \*PH,
-      poll => "r",
-      cb   => sub { my $tst =  <PH>; parseRTMPLog($tst); }
-  );
-
-  _log "Launched: " . $cmd;
-
-  return $pid;
+  $$proc_stat{"cmd"} = $cmd; $$proc_stat{"fname"} = $fname_prefix;
+  launchProcess($proc_stat);
 }
+
+# Launches handler for the outgoing channel
+# Input argument 1: Outgoing channel ID
+# Output argument 2: Reference to hash array to store the process data (pid, cmd etc)
+sub launchOutChanHandler($ $) {
+  my ($id_out, $proc_stat) = @_;
+
+  my $cmd = "ffmpeg -re -i " . getFIFOname($id_out) . getChanCmd($id_out);
+  my $fname_prefix = File::Spec->catfile($global_cfg{"ffmpeg_log_dir"}, "ffmpeg");
+
+  $$proc_stat{"cmd"} = $cmd; $$proc_stat{"fname"} = $fname_prefix;
+  launchProcess($proc_stat);
+};
 
 # Handler for the "PING" task
 sub handlePing($ $) {
+  my $out_id;
   _log "Got the PING: '" . $_[1] . "'";
+
+  _log "Number of active connections: " . scalar keys %connections;
+
+  foreach $out_id (keys %connections) {
+    _log "Connection to outgoing channel $out_id:";
+    my $dir;
+    foreach $dir ("in", "out") {
+      foreach (keys %{$connections{$out_id}{$dir}}) {
+         _log "  " . uc($dir) . " chan data '$_' = '" . $connections{$out_id}{$dir}{$_} . "'";
+      };
+    };
+  };
 };
 
 # Handler for the "CONNECT" task
@@ -170,15 +214,36 @@ sub handleConnect($ $) {
   my @chans = @$chans_r;
   assert(@chans eq 2);
 
-  my %chan_tps;
-  foreach(@chans) { $chan_tps{$_} = getChanType($_); };
-  # One of the channels should be incoming, another - outgoing
-  assert($chan_tps{$chans[0]} ne $chan_tps{$chans[1]});
+  my $id_in = $chans[0];
+  my $id_out = $chans[1];
+
+  if(getChanType($id_in) ne getChanTypeId("RTMP_IN")) {
+    _log "Channel $id_in is not incoming channel. Ignoring the task.";
+    return;
+  };
+  if(getChanType($id_out) ne getChanTypeId("RTMP_OUT")) {
+    _log "Channel $id_out is not outgoing channel. Ignoring the task.";
+    return;
+  };
 
   # Launching the channel handlers
+  _log "Connecting channels $id_in and $id_out";
   cleanProcesses();
-  launchInChanHandler($chans[1]);
-  launchOutChanHandler($chans[1], $chans[0]);
+  reCreateFIFO($id_out); # Cleaning the FIFO by recreating it :-)
+
+  my %proc_stat_in; my %proc_stat_out;
+  launchInChanHandler($id_in, $id_out, \%proc_stat_in);
+  launchOutChanHandler($id_out, \%proc_stat_out);
+
+  my %con; # Connection data. Hash of hashes
+  $con{"in"} = \%proc_stat_in;
+  $con{"out"} = \%proc_stat_out;
+  $con{"in"}{"id"} = $id_in;
+  $con{"out"}{"id"} = $id_out;
+
+  $connections{$id_out} = \%con;
+
+  # Update database tables
 };
 
 # Handles new tasks. After processing the task, removes the task file
@@ -219,6 +284,8 @@ sub handleTask($) {
 # Initializes tasks listener
 {
   my $inotify_w;
+  my $dir_inotify;
+  my $dir_w;
 
   # Initializes tasks listener
   sub initTasksListener() {
@@ -232,9 +299,9 @@ sub handleTask($) {
     }
 
     # Starting to monitor
-    my $dir_inotify = Linux::Inotify2->new;
+    $dir_inotify = Linux::Inotify2->new;
 
-    my $dir_w = $dir_inotify->watch(
+    $dir_w = $dir_inotify->watch(
       $tasks_dir,
       IN_MOVED_TO|IN_CLOSE_WRITE,
       sub {
@@ -269,9 +336,6 @@ createFIFOs();
 my $cv = AnyEvent->condvar;
 
 initTasksListener();
-
-launchInChanHandler(1);
-launchOutChanHandler(1, 5);
 
 # Wait for events
 AnyEvent->condvar->recv;
