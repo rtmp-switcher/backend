@@ -14,7 +14,7 @@ use Carp::Assert;
 use Config;
 
 @ISA = qw(Exporter);
-@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getChanCmd getBkpFname my_time my_time_short);
+@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getChanCmd getBkpFolder getBkpFname my_time my_time_short);
 
 use strict;
 use vars qw(@ISA @EXPORT $VERSION);
@@ -61,6 +61,12 @@ sub getChanTypeId($);
 # Returns command line for the channel depending on its type
 # Input argument: channel id
 sub getChanCmd($);
+
+# Get backup folder for the specified channel id
+sub getBkpFolder($);
+
+# Get the current file name for the recording
+sub getBkpFname($);
 
 ## Returns time strings
 sub my_time ();
