@@ -25,7 +25,7 @@ try {
         $stmt = $dbh->query($sql);
 
         // We need to return the latest valid URL for every channel. Stored in channel_details
-        $sql = "SELECT url  FROM channel_details WHERE channel=? order by tm_created DESC LIMIT 1";
+        $sql = "SELECT url  FROM channel_details WHERE channel=? ORDER BY tm_created DESC LIMIT 1";
         $details = $dbh->prepare($sql);
 
 	    $chans = array();

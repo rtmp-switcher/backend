@@ -162,8 +162,7 @@ sub parse_config ($) {
 
     # Get the latest and greatest channels params from the channel_details table
     RegisterSQL("chan_details", "SELECT app, playPath, flashVer, swfUrl, url, pageUrl, tcUrl FROM channel_details ".
-                              "WHERE tm_created = (SELECT MAX(tm_created) FROM channel_details WHERE channel = ?) " .
-                              "AND channel = ?", 0);
+                              "WHERE channel = ? ORDER BY tm_created DESC LIMIT 1", 0);
   };
 
   sub DoneDbCache() {
@@ -248,7 +247,7 @@ sub getChanType($) {
 # Input argument: channel id
 sub getChanCmd($) {
    my $id = shift;
-   my @args = ($id, $id);
+   my @args = ($id);
 
    my $cd = GetCachedDbTable("chan_details", \@args);
    assert($cd->isEmpty ne 1);
