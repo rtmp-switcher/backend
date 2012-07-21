@@ -162,7 +162,7 @@ sub parse_config ($) {
 
     # Get the latest and greatest channels params from the channel_details table
     RegisterSQL("chan_details", "SELECT app, playPath, flashVer, swfUrl, url, pageUrl, tcUrl FROM channel_details ".
-                              "WHERE channel = ? ORDER BY tm_created DESC LIMIT 1", 0);
+                                "WHERE channel = ? ORDER BY tm_created DESC LIMIT 1", 0);
   };
 
   sub DoneDbCache() {
