@@ -76,6 +76,33 @@ sub reCreateFIFO($) {
   _log "FIFO has been (re-)created: '" . $fname . "'";
 };
 
+# Drops the conection between incoming and outgoing channels
+# 1. Kills the processes associated with the connection (rtmpdump and ffmpeg)
+# 2. Cleans the FIFO
+# 3. Removes the connection record from %connections
+sub dropConnection($) {
+  my $out_id = shift;
+
+  if(!defined($connections{$out_id})) {
+    _log "No previous connection with outgoing channel $out_id exists. Nothing to clean!";
+    return;
+  };
+
+  # Step 1: kill rtmpdump and ffmpeg
+  foreach ("in", "out") {
+    my $pid = $connections{$out_id}{$_}{"pid"};
+
+    _log "Killing " . uc($_) . " process " . $pid . ": '" . $connections{$out_id}{$_}{"cmd"} . "'";
+    kill 9, $pid; # Yes, we do it on purpose. 9 because we like it to be here!
+  };
+
+  # Step 2: re-create FIFO
+  reCreateFIFO(getFIFOname($out_id));
+
+  # Step 3: Removes the connection details from %connections
+  delete($connections{$out_id});
+};
+
 # Killing all the ffmpeg and rtmpdumps
 sub cleanProcesses() {
   system("killall -9 ffmpeg rtmpdump 2> /dev/null");
@@ -127,6 +154,7 @@ sub launchProcess($) {
 
   # Opening log file
   my $fh = IO::File->new($fname, "a+") or log_die "Couldn't open '$fname': $!";
+  $fh->print($cmd . "\n");
   $fh->autoflush(1);
   $$proc{"fname"} = $fname;
 
@@ -178,7 +206,8 @@ sub launchInChanHandler($ $ $) {
 sub launchOutChanHandler($ $) {
   my ($id_out, $proc_stat) = @_;
 
-  my $cmd = "ffmpeg -re -i " . getFIFOname($id_out) . getChanCmd($id_out);
+   my $cmd = "cat " . getFIFOname($id_out) . " | ffmpeg -i - " . getChanCmd($id_out);
+
   my $fname_prefix = File::Spec->catfile($global_cfg{"ffmpeg_log_dir"}, "ffmpeg");
 
   $$proc_stat{"cmd"} = $cmd; $$proc_stat{"fname"} = $fname_prefix;
@@ -228,8 +257,7 @@ sub handleConnect($ $) {
 
   # Launching the channel handlers
   _log "Connecting channels $id_in and $id_out";
-  cleanProcesses();
-  reCreateFIFO($id_out); # Cleaning the FIFO by recreating it :-)
+  dropConnection($id_out);
 
   my %proc_stat_in; my %proc_stat_out;
   launchInChanHandler($id_in, $id_out, \%proc_stat_in);
