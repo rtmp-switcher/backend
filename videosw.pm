@@ -13,7 +13,7 @@ use Carp::Assert;
 use Config;
 
 @ISA = qw(Exporter);
-@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die getChanTypeId getChanCmd);
+@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die getChanTypeId getChanCmd my_time my_time_short);
 
 use strict;
 use vars qw(@ISA @EXPORT $VERSION);
@@ -58,7 +58,27 @@ sub getChanTypeId($);
 # Input argument: channel id
 sub getChanCmd($);
 
+## Returns time strings
+sub my_time ();
+sub my_time_short ();
+
 ################################################################################
+
+## return time string
+sub my_time ()
+{
+ my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) =  localtime(time);
+ return sprintf "%4d-%02d-%02d_%02d_%02d_%02d", $year+1900,$mon+1,$mday,$hour,$min,$sec;
+}
+
+## return short time string
+sub my_time_short ()
+{
+ my $a = my_time;
+ $a =~ s/_\d+_\d+$//ig;
+ return $a."h";
+}
+
 
 # Logging functions
 {
