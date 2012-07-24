@@ -44,7 +44,7 @@ CREATE  TABLE IF NOT EXISTS `video_switch`.`channels` (
     REFERENCES `video_switch`.`channel_types` (`id` )
     ON DELETE CASCADE
     ON UPDATE CASCADE)
-ENGINE = InnoDB, 
+ENGINE = InnoDB
 COMMENT = 'Channels in the system' ;
 
 SHOW WARNINGS;
@@ -95,12 +95,12 @@ COMMENT = 'Possible channel states: live, down. We can put here here mo' /* comm
 SHOW WARNINGS;
 
 -- -----------------------------------------------------
--- Table `video_switch`.`channel_status`
+-- Table `video_switch`.`channel_details_status`
 -- -----------------------------------------------------
-DROP TABLE IF EXISTS `video_switch`.`channel_status` ;
+DROP TABLE IF EXISTS `video_switch`.`channel_details_status` ;
 
 SHOW WARNINGS;
-CREATE  TABLE IF NOT EXISTS `video_switch`.`channel_status` (
+CREATE  TABLE IF NOT EXISTS `video_switch`.`channel_details_status` (
   `id` INT NOT NULL AUTO_INCREMENT ,
   `checked_details` INT NOT NULL COMMENT 'Last checked channel details' ,
   `state` INT NOT NULL ,
@@ -139,7 +139,6 @@ CREATE  TABLE IF NOT EXISTS `video_switch`.`connections` (
   PRIMARY KEY (`id`, `in_chan`, `out_chan`, `tm_created`) ,
   INDEX `fk_in_chan` (`in_chan` ASC) ,
   INDEX `fk_out_chan` (`out_chan` ASC) ,
-  UNIQUE INDEX `out_chan_UNIQUE` (`out_chan` ASC) ,
   CONSTRAINT `fk_in_chan`
     FOREIGN KEY (`in_chan` )
     REFERENCES `video_switch`.`channels` (`id` )
@@ -161,7 +160,7 @@ grant ALL on TABLE `video_switch`.`channel_states` to video_switch;
 grant ALL on TABLE `video_switch`.`channel_details` to video_switch;
 grant ALL on TABLE `video_switch`.`channel_types` to video_switch;
 grant ALL on TABLE `video_switch`.`channels` to video_switch;
-grant ALL on TABLE `video_switch`.`channel_status` to video_switch;
+grant ALL on TABLE `video_switch`.`channel_details_status` to video_switch;
 SHOW WARNINGS;
 
 SET SQL_MODE=@OLD_SQL_MODE;
