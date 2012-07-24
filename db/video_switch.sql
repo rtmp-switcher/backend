@@ -45,7 +45,7 @@ CREATE  TABLE IF NOT EXISTS `video_switch`.`channels` (
     REFERENCES `video_switch`.`channel_types` (`id` )
     ON DELETE CASCADE
     ON UPDATE CASCADE)
-ENGINE = InnoDB
+ENGINE = InnoDB, 
 COMMENT = 'Channels in the system' ;
 
 SHOW WARNINGS;
@@ -144,7 +144,7 @@ CREATE  TABLE IF NOT EXISTS `video_switch`.`connections` (
   `in_chan` INT NOT NULL COMMENT 'Incoming channel' ,
   `out_chan` INT NOT NULL COMMENT 'Outgoing channel' ,
   `tm_created` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Connection creation time' ,
-  PRIMARY KEY (`id`, `in_chan`, `out_chan`, `tm_created`) ,
+  PRIMARY KEY (`id`, `in_chan`, `out_chan`) ,
   INDEX `fk_in_chan` (`in_chan` ASC) ,
   INDEX `fk_out_chan` (`out_chan` ASC) ,
   CONSTRAINT `fk_in_chan`
