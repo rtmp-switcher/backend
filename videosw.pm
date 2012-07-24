@@ -14,7 +14,7 @@ use Carp::Assert;
 use Config;
 
 @ISA = qw(Exporter);
-@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getChanCmd getBkpFolder getBkpFname my_time my_time_short);
+@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL InsertDbValues GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getChanCmd getBkpFolder getBkpFname my_time my_time_short);
 
 use strict;
 use vars qw(@ISA @EXPORT $VERSION);
@@ -43,10 +43,17 @@ sub InitDbCache($);
 sub DoneDbCache();
 
 # Registers SQL-statement in the system
-# Param 1: SQL-statement alias (to be used in calls to GetCachedDbTable and GetCachedDbValue)
+# Param 1: SQL-statement key (to be used in calls to GetCachedDbTable and GetCachedDbValue)
 # Param 2: SQL statement itself (can and typically contains "?" placeholders for the binding vars
 # Param 3: 1 if result of the query should be cached. 0 if the query should be executed every time
 sub RegisterSQL($ $ $);
+
+# Inserts the list of values into the database
+# SQL statement should be registered with RegisterSQL
+# Param 1: SQL-statement key (th esame as used in RegisterSQL)
+# Param 2: List of values to insert
+# IMPORTANT: commit is not called. The caller of thsi function shoudl take care about commiting or use autocommit
+sub InsertDbValues($ $);
 
 sub GetCachedDbValue($ $);
 
@@ -234,10 +241,22 @@ sub parse_config ($) {
     return 1;
   };
 
+  sub InsertDbValues($ $) {
+    my $key = shift;
+    my $id_ref = shift;
+
+    unless(exists($st{$key})) {
+      # First usage. Preparing the statement
+      $st{$key} = $db->prepare($sql{$key}) or log_die "preparing '$sql{$key}' for '$key': " . $db->errstr;
+    };
+
+    # Inserting the values
+    $st{$key}->execute(@$id_ref) or log_die "executing: " . $st{$key}->errstr;
+  };
+
   sub GetCachedDbTable($ $) {
      my $key = shift;
      my $id_ref = shift; my $id = (join ",", @$id_ref);
-     my $f_n =  (caller(0))[3];
 
      my $cache_ref = undef;
 
@@ -249,8 +268,7 @@ sub parse_config ($) {
 		        return $cache_ref->{$id};
         }
      } else {
-	      $st{$key} = $db->prepare($sql{$key})
-     	  or die "preparing '$sql{$key}' for '$key': " . $db->errstr;
+	      $st{$key} = $db->prepare($sql{$key}) or log_die "preparing '$sql{$key}' for '$key': " . $db->errstr;
      };
 
      # Not in the cache or should not be cached => retrieving from the database
@@ -258,10 +276,9 @@ sub parse_config ($) {
      foreach(@$id_ref) {
 	    $st{$key}->bind_param($i++, $_) or log_die "binding: " . $st{$key}->errstr;
      };
-     _log "before exec";
      $st{$key}->execute() or log_die "executing: " . $st{$key}->errstr;
+
      my $r = new Data::Table([], $st{$key}->{NAME_uc});
-     _log "before fetch";
      while(my @d = $st{$key}->fetchrow_array) { $r->addRow(\@d); };
 
      if(defined($cache_ref)) { $$cache_ref{$id} = $r; };

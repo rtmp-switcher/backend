@@ -41,7 +41,10 @@ my %connections;
   RegisterSQL("chans_by_type", "SELECT id, name FROM channels WHERE is_enabled = TRUE AND chan_type = ?", 0);
 
   # Insert connection details into the connections table
-  RegisterSQL("connections", "INSERT INTO connections (in_chan,out_chan)  VALUES (?,?)", 0);
+  RegisterSQL("connections-ins", "INSERT INTO connections (in_chan, out_chan)  VALUES (?,?)", 0);
+
+  # Delete the data from connections table
+  RegisterSQL("connection-del", "DELETE FROM connections WHERE in_chan = ? AND out_chan =?", 0);
 }
 
 # Get channel state id by name
@@ -61,7 +64,8 @@ sub getChansByType($) {
 # Input argument 2: Outgoing channel id
 sub addConnectionToDb($ $) {
   my @args = ($_[0], $_[1]);
-  GetCachedDbTable("connections", \@args);
+  InsertDbValues("connections-ins", \@args);
+  $dbh->commit or log_die $dbh->errstr;
 };
 
 # Returns the name of the FIFO used to communicate between rtmpdump and ffmpeg
@@ -287,7 +291,7 @@ sub handleConnect($ $) {
   $connections{$id_out} = \%con;
 
   # Update database tables
-#  addConnectionToDb($id_in, $id_out);
+  addConnectionToDb($id_in, $id_out);
 };
 
 # Handles new tasks. After processing the task, removes the task file
