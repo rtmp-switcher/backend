@@ -208,7 +208,7 @@ sub parse_config ($) {
     RegisterSQL("chan_type_by_id", "SELECT chan_type FROM channels WHERE id = ?", 0);
 
     # Get the latest and greatest channels params from the channel_details table
-    RegisterSQL("chan_details", "SELECT app, playPath, flashVer, swfUrl, url, pageUrl, tcUrl FROM channel_details ".
+    RegisterSQL("chan_details", "SELECT id, app, playPath, flashVer, swfUrl, url, pageUrl, tcUrl FROM channel_details ".
                                 "WHERE channel = ? ORDER BY tm_created DESC LIMIT 1", 0);
 
     # Get the backup folder for the specified channel id
@@ -258,9 +258,10 @@ sub parse_config ($) {
      foreach(@$id_ref) {
 	    $st{$key}->bind_param($i++, $_) or log_die "binding: " . $st{$key}->errstr;
      };
-     $st{$key}->execute() or die "executing: " . $st{$key}->errstr;
+     _log "before exec";
+     $st{$key}->execute() or log_die "executing: " . $st{$key}->errstr;
      my $r = new Data::Table([], $st{$key}->{NAME_uc});
-
+     _log "before fetch";
      while(my @d = $st{$key}->fetchrow_array) { $r->addRow(\@d); };
 
      if(defined($cache_ref)) { $$cache_ref{$id} = $r; };
@@ -315,7 +316,7 @@ sub getBkpFname($) {
   return $res;
 };
 
-# Returns command line for the channel depending on its type
+# Returns the list: (channel details id, command line for the channel depending on its type)
 # Input argument: channel id
 sub getChanCmd($) {
    my $id = shift;
@@ -344,7 +345,7 @@ sub getChanCmd($) {
       _log "Unknown channel type " . $chan_type . " for the channel " . $id;
    };
 
-   return $res;
+   return ($row->{"ID"}, $res);
 };
 
 1;

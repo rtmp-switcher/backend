@@ -39,6 +39,9 @@ my %connections;
 
    # Get list of channels by channel type
   RegisterSQL("chans_by_type", "SELECT id, name FROM channels WHERE is_enabled = TRUE AND chan_type = ?", 0);
+
+  # Insert connection details into the connections table
+  RegisterSQL("connections", "INSERT INTO connections (in_chan,out_chan)  VALUES (?,?)", 0);
 }
 
 # Get channel state id by name
@@ -51,6 +54,14 @@ sub getChanStateId($) {
 sub getChansByType($) {
    my @args = ($_[0]);
    return  GetCachedDbTable("chans_by_type", \@args);
+};
+
+# Adds connection record to the database
+# Input argument 1: Incoming channel id
+# Input argument 2: Outgoing channel id
+sub addConnectionToDb($ $) {
+  my @args = ($_[0], $_[1]);
+  GetCachedDbTable("connections", \@args);
 };
 
 # Returns the name of the FIFO used to communicate between rtmpdump and ffmpeg
@@ -193,7 +204,8 @@ sub launchProcess($) {
 sub launchInChanHandler($ $ $) {
   my ($id_in, $id_out, $proc_stat) = @_;
 
-  my $cmd = getChanCmd($id_in) . "-o " . getFIFOname($id_out);
+  my @chan_cmd = getChanCmd($id_in);
+  my $cmd = $chan_cmd[1] . "-o " . getFIFOname($id_out);
   my $fname_prefix = File::Spec->catfile($global_cfg{"rtmpdump_log_dir"}, "rtmpdump");
 
   $$proc_stat{"cmd"} = $cmd; $$proc_stat{"fname"} = $fname_prefix;
@@ -207,8 +219,9 @@ sub launchOutChanHandler($ $) {
   my ($id_out, $proc_stat) = @_;
 
   my $flv_fname = getBkpFname($id_out);
+  my @chan_cmd = getChanCmd($id_out);
 
-  my $cmd = "cat " . getFIFOname($id_out) . " | tee $flv_fname | ffmpeg -i - " . getChanCmd($id_out);
+  my $cmd = "cat " . getFIFOname($id_out) . " | tee $flv_fname | ffmpeg -i - " . $chan_cmd[1];
 
   my $fname_prefix = File::Spec->catfile($global_cfg{"ffmpeg_log_dir"}, "ffmpeg");
 
@@ -274,6 +287,7 @@ sub handleConnect($ $) {
   $connections{$id_out} = \%con;
 
   # Update database tables
+#  addConnectionToDb($id_in, $id_out);
 };
 
 # Handles new tasks. After processing the task, removes the task file
