@@ -44,7 +44,7 @@ CREATE  TABLE IF NOT EXISTS `video_switch`.`channels` (
     REFERENCES `video_switch`.`channel_types` (`id` )
     ON DELETE CASCADE
     ON UPDATE CASCADE)
-ENGINE = InnoDB
+ENGINE = InnoDB, 
 COMMENT = 'Channels in the system' ;
 
 SHOW WARNINGS;
@@ -122,6 +122,36 @@ CREATE  TABLE IF NOT EXISTS `video_switch`.`channel_status` (
     ON UPDATE CASCADE)
 ENGINE = InnoDB, 
 COMMENT = 'Status of the channel' ;
+
+SHOW WARNINGS;
+
+-- -----------------------------------------------------
+-- Table `video_switch`.`connections`
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `video_switch`.`connections` ;
+
+SHOW WARNINGS;
+CREATE  TABLE IF NOT EXISTS `video_switch`.`connections` (
+  `id` INT NOT NULL AUTO_INCREMENT ,
+  `in_chan` INT NOT NULL COMMENT 'Incoming channel' ,
+  `out_chan` INT NOT NULL COMMENT 'Outgoing channel' ,
+  `tm_created` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Connection creation time' ,
+  PRIMARY KEY (`id`, `in_chan`, `out_chan`, `tm_created`) ,
+  INDEX `fk_in_chan` (`in_chan` ASC) ,
+  INDEX `fk_out_chan` (`out_chan` ASC) ,
+  UNIQUE INDEX `out_chan_UNIQUE` (`out_chan` ASC) ,
+  CONSTRAINT `fk_in_chan`
+    FOREIGN KEY (`in_chan` )
+    REFERENCES `video_switch`.`channels` (`id` )
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT `fk_out_chan`
+    FOREIGN KEY (`out_chan` )
+    REFERENCES `video_switch`.`channels` (`id` )
+    ON DELETE CASCADE
+    ON UPDATE CASCADE)
+ENGINE = InnoDB, 
+COMMENT = 'Connections betweein incoming and outgoing channels' ;
 
 SHOW WARNINGS;
 
