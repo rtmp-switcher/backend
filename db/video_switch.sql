@@ -36,7 +36,8 @@ CREATE  TABLE IF NOT EXISTS `video_switch`.`channels` (
   `comment` VARCHAR(256) NULL ,
   `chan_type` INT NOT NULL ,
   `uri` TEXT NOT NULL COMMENT 'HTTP or RMTP URI' ,
-  `bkp_folder` VARCHAR(256) NULL COMMENT 'Relative path!' ,
+  `bkp_folder` VARCHAR(512) NULL COMMENT 'Relative path!' ,
+  `embed_html` TEXT NULL COMMENT 'Code to embed the channel' ,
   PRIMARY KEY (`id`, `chan_type`) ,
   INDEX `fk_chan_type` (`chan_type` ASC) ,
   CONSTRAINT `fk_chan_type`
@@ -95,31 +96,38 @@ COMMENT = 'Possible channel states: live, down. We can put here here mo' /* comm
 SHOW WARNINGS;
 
 -- -----------------------------------------------------
--- Table `video_switch`.`channel_details_status`
+-- Table `video_switch`.`channel_status`
 -- -----------------------------------------------------
-DROP TABLE IF EXISTS `video_switch`.`channel_details_status` ;
+DROP TABLE IF EXISTS `video_switch`.`channel_status` ;
 
 SHOW WARNINGS;
-CREATE  TABLE IF NOT EXISTS `video_switch`.`channel_details_status` (
+CREATE  TABLE IF NOT EXISTS `video_switch`.`channel_status` (
   `id` INT NOT NULL AUTO_INCREMENT ,
   `checked_details` INT NOT NULL COMMENT 'Last checked channel details' ,
   `state` INT NOT NULL ,
   `pid` INT NULL COMMENT 'Recorder pid' ,
   `recorded_fname` TEXT NULL COMMENT 'Recording file name\n' ,
   `tm_created` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ,
-  PRIMARY KEY (`id`, `checked_details`, `state`) ,
+  `channel` INT NOT NULL ,
+  PRIMARY KEY (`id`, `checked_details`, `state`, `channel`) ,
   INDEX `fk_state` (`state` ASC) ,
   INDEX `fk_chan_details` (`checked_details` ASC) ,
+  INDEX `fk_channels` (`channel` ASC) ,
   CONSTRAINT `fk_state`
     FOREIGN KEY (`state` )
     REFERENCES `video_switch`.`channel_states` (`id` )
-    ON DELETE NO ACTION
-    ON UPDATE NO ACTION,
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
   CONSTRAINT `fk_chan_details`
     FOREIGN KEY (`checked_details` )
     REFERENCES `video_switch`.`channel_details` (`id` )
     ON DELETE CASCADE
-    ON UPDATE CASCADE)
+    ON UPDATE CASCADE,
+  CONSTRAINT `fk_channels`
+    FOREIGN KEY (`channel` )
+    REFERENCES `video_switch`.`channels` (`id` )
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
 ENGINE = InnoDB, 
 COMMENT = 'Status of the channel' ;
 
@@ -150,7 +158,7 @@ CREATE  TABLE IF NOT EXISTS `video_switch`.`connections` (
     ON DELETE CASCADE
     ON UPDATE CASCADE)
 ENGINE = InnoDB, 
-COMMENT = 'Connections betweein incoming and outgoing channels' ;
+COMMENT = 'Connections between incoming and outgoing channels' ;
 
 SHOW WARNINGS;
 
@@ -160,7 +168,7 @@ grant ALL on TABLE `video_switch`.`channel_states` to video_switch;
 grant ALL on TABLE `video_switch`.`channel_details` to video_switch;
 grant ALL on TABLE `video_switch`.`channel_types` to video_switch;
 grant ALL on TABLE `video_switch`.`channels` to video_switch;
-grant ALL on TABLE `video_switch`.`channel_details_status` to video_switch;
+grant ALL on TABLE `video_switch`.`channel_status` to video_switch;
 SHOW WARNINGS;
 
 SET SQL_MODE=@OLD_SQL_MODE;
