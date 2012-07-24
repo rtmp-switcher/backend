@@ -205,7 +205,7 @@ sub parse_config ($) {
     RegisterSQL("chan_types", "SELECT id FROM channel_types WHERE chan_type = ?", 1);
 
     # Retrieves channel type for the specified channel
-    RegisterSQL("chan_type_by_id", "SELECT chan_type FROM channels WHERE id = ?", 1);
+    RegisterSQL("chan_type_by_id", "SELECT chan_type FROM channels WHERE id = ?", 0);
 
     # Get the latest and greatest channels params from the channel_details table
     RegisterSQL("chan_details", "SELECT app, playPath, flashVer, swfUrl, url, pageUrl, tcUrl FROM channel_details ".
@@ -227,7 +227,8 @@ sub parse_config ($) {
     $sql{$key} = shift;
 
     my $cache_enabled = shift;
-    if ($cache_enabled) {
+    if ($cache_enabled eq 1) {
+        _log "Cache is enabled for SQL $key!";
         $caches{$key} = {};
     };
     return 1;
@@ -244,6 +245,7 @@ sub parse_config ($) {
 
      if(exists($st{$key})) {
      	if((defined($cache_ref)) && (exists($$cache_ref{$id}))) {
+                _log "Returning the CACHED value for the key $key";
 		        return $cache_ref->{$id};
         }
      } else {
@@ -254,7 +256,7 @@ sub parse_config ($) {
      # Not in the cache or should not be cached => retrieving from the database
      my $i = 1;
      foreach(@$id_ref) {
-	    $st{$key}->bind_param($i++, $_) or die "binding: " . $st{$key}->errstr;
+	    $st{$key}->bind_param($i++, $_) or log_die "binding: " . $st{$key}->errstr;
      };
      $st{$key}->execute() or die "executing: " . $st{$key}->errstr;
      my $r = new Data::Table([], $st{$key}->{NAME_uc});
@@ -263,6 +265,7 @@ sub parse_config ($) {
 
      if(defined($cache_ref)) { $$cache_ref{$id} = $r; };
 
+     _log "Returning the FETCHED value for the key $key";
      return $r;
   };
 
