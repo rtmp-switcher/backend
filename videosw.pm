@@ -14,7 +14,7 @@ use Carp::Assert;
 use Config;
 
 @ISA = qw(Exporter);
-@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL InsertDbValues GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getChanCmd getBkpFolder getBkpFname my_time my_time_short);
+@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL ModifyDbValues GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getChanCmd getBkpFolder getBkpFname my_time my_time_short);
 
 use strict;
 use vars qw(@ISA @EXPORT $VERSION);
@@ -48,12 +48,12 @@ sub DoneDbCache();
 # Param 3: 1 if result of the query should be cached. 0 if the query should be executed every time
 sub RegisterSQL($ $ $);
 
-# Inserts the list of values into the database
+# Modify database content (INSERT, DELETE and UPDATE SQL statements are supported)
 # SQL statement should be registered with RegisterSQL
 # Param 1: SQL-statement key (th esame as used in RegisterSQL)
 # Param 2: List of values to insert
 # IMPORTANT: commit is not called. The caller of thsi function shoudl take care about commiting or use autocommit
-sub InsertDbValues($ $);
+sub ModifyDbValues($ $);
 
 sub GetCachedDbValue($ $);
 
@@ -241,7 +241,7 @@ sub parse_config ($) {
     return 1;
   };
 
-  sub InsertDbValues($ $) {
+  sub ModifyDbValues($ $) {
     my $key = shift;
     my $id_ref = shift;
 
@@ -250,7 +250,7 @@ sub parse_config ($) {
       $st{$key} = $db->prepare($sql{$key}) or log_die "preparing '$sql{$key}' for '$key': " . $db->errstr;
     };
 
-    # Inserting the values
+    # Inserting, deleting or updating the values
     $st{$key}->execute(@$id_ref) or log_die "executing: " . $st{$key}->errstr;
   };
 

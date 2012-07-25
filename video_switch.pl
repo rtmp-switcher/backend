@@ -59,12 +59,27 @@ sub getChansByType($) {
    return  GetCachedDbTable("chans_by_type", \@args);
 };
 
+# Drop connection record from the database
+# Input argument 1: Incoming channel id
+# Input argument 2: Outgoing channel id
+sub dropConnectionFromDb($ $) {
+  my ($id_in, $id_out) = @_;
+
+  _log "Removing the connection record from the database: $id_in <-> $id_out";
+
+  ModifyDbValues("connection-del", \@_);
+  $dbh->commit or log_die $dbh->errstr;
+};
+
 # Adds connection record to the database
 # Input argument 1: Incoming channel id
 # Input argument 2: Outgoing channel id
 sub addConnectionToDb($ $) {
-  my @args = ($_[0], $_[1]);
-  InsertDbValues("connections-ins", \@args);
+  my ($id_in, $id_out) = @_;
+
+  _log "Inserting the connection record to the database: $id_in <-> $id_out";
+
+  ModifyDbValues("connections-ins", \@_);
   $dbh->commit or log_die $dbh->errstr;
 };
 
@@ -114,7 +129,10 @@ sub dropConnection($) {
   # Step 2: re-create FIFO
   reCreateFIFO(getFIFOname($out_id));
 
-  # Step 3: Removes the connection details from %connections
+  # Step 3: Remove the connection detail from the database
+  dropConnectionFromDb($connections{$out_id}{"in"}{"id"}, $out_id);
+
+  # Step 4: Removes the connection details from %connections
   delete($connections{$out_id});
 };
 
@@ -291,6 +309,7 @@ sub handleConnect($ $) {
   $connections{$id_out} = \%con;
 
   # Update database tables
+  dropConnectionFromDb($id_in, $id_out);
   addConnectionToDb($id_in, $id_out);
 };
 
