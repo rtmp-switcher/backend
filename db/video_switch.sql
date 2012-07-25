@@ -102,14 +102,13 @@ DROP TABLE IF EXISTS `video_switch`.`channel_status` ;
 
 SHOW WARNINGS;
 CREATE  TABLE IF NOT EXISTS `video_switch`.`channel_status` (
-  `id` INT NOT NULL AUTO_INCREMENT ,
+  `channel` INT NOT NULL ,
   `checked_details` INT NOT NULL COMMENT 'Last checked channel details' ,
   `state` INT NOT NULL ,
   `pid` INT NULL COMMENT 'Recorder pid' ,
   `recorded_fname` TEXT NULL COMMENT 'Recording file name\n' ,
   `tm_created` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ,
-  `channel` INT NOT NULL ,
-  PRIMARY KEY (`id`, `checked_details`, `state`, `channel`) ,
+  PRIMARY KEY (`channel`, `state`, `checked_details`) ,
   INDEX `fk_state` (`state` ASC) ,
   INDEX `fk_chan_details` (`checked_details` ASC) ,
   INDEX `fk_channels` (`channel` ASC) ,
@@ -140,11 +139,10 @@ DROP TABLE IF EXISTS `video_switch`.`connections` ;
 
 SHOW WARNINGS;
 CREATE  TABLE IF NOT EXISTS `video_switch`.`connections` (
-  `id` INT NOT NULL AUTO_INCREMENT ,
   `in_chan` INT NOT NULL COMMENT 'Incoming channel' ,
   `out_chan` INT NOT NULL COMMENT 'Outgoing channel' ,
   `tm_created` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Connection creation time' ,
-  PRIMARY KEY (`id`, `in_chan`, `out_chan`) ,
+  PRIMARY KEY (`in_chan`, `out_chan`) ,
   INDEX `fk_in_chan` (`in_chan` ASC) ,
   INDEX `fk_out_chan` (`out_chan` ASC) ,
   CONSTRAINT `fk_in_chan`
