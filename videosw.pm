@@ -14,7 +14,7 @@ use Carp::Assert;
 use Config;
 
 @ISA = qw(Exporter);
-@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL ModifyDbValues GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getChanCmd getBkpFolder getBkpFname my_time my_time_short);
+@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL ModifyDbValues GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getLatestChanCmd getBkpFolder getBkpFname my_time my_time_short);
 
 use strict;
 use vars qw(@ISA @EXPORT $VERSION);
@@ -65,9 +65,11 @@ sub getChanType($);
 # Get channel type id by its name
 sub getChanTypeId($);
 
-# Returns command line for the channel depending on its type
+# Returns the list: (channel details id, command line for the channel depending on its type) or empty list
+# empty list is returned if no channel details exists for the channel specified or connect_attempts for the
+# latest channel detail record for this channel is more than 2.
 # Input argument: channel id
-sub getChanCmd($);
+sub getLatestChanCmd($);
 
 # Get backup folder for the specified channel id
 sub getBkpFolder($);
@@ -215,8 +217,8 @@ sub parse_config ($) {
     RegisterSQL("chan_type_by_id", "SELECT chan_type FROM channels WHERE id = ?", 0);
 
     # Get the latest and greatest channels params from the channel_details table
-    RegisterSQL("chan_details", "SELECT id, app, playPath, flashVer, swfUrl, url, pageUrl, tcUrl FROM channel_details ".
-                                "WHERE channel = ? ORDER BY tm_created DESC LIMIT 1", 0);
+    RegisterSQL("chan_details", "SELECT id, app, playPath, flashVer, swfUrl, url, pageUrl, tcUrl, connect_attempts " .
+                                "FROM channel_details WHERE channel = ? ORDER BY tm_created DESC LIMIT 1", 0);
 
     # Get the backup folder for the specified channel id
     RegisterSQL("bkp_folder", "SELECT bkp_folder FROM channels WHERE id = ?", 0);
@@ -333,18 +335,26 @@ sub getBkpFname($) {
   return $res;
 };
 
-# Returns the list: (channel details id, command line for the channel depending on its type)
-# Input argument: channel id
-sub getChanCmd($) {
+sub getLatestChanCmd($) {
    my $id = shift;
    my @args = ($id);
 
    my $cd = GetCachedDbTable("chan_details", \@args);
    assert($cd->isEmpty ne 1);
-   assert($cd->nofRow eq 1);
+
+   if($cd->nofRow ne 1) {
+     _log "getLatestChanCmd: [$id] got " . $cd->nofRow . " rows instead of 1, returning empty array";
+     return ();
+   };
 
    # Creating command line based on the query results
    my $row = $cd->rowHashRef(0);
+   if($row->{"CONNECT_ATTEMPTS"} > 2) {
+     _log "getLatestChanCmd: [$id] connect_attempts == " . $row->{"CONNECT_ATTEMPTS"} . " for the detail " .
+           $row->{"ID"} . ", returning empty array";
+     return ();
+   };
+
    my $res; # Resulting string
 
    my $chan_type = getChanType($id);
@@ -362,6 +372,7 @@ sub getChanCmd($) {
       _log "Unknown channel type " . $chan_type . " for the channel " . $id;
    };
 
+   _log "getLatestChanCmd: returning cmdline for channel details " . $row->{"ID"};
    return ($row->{"ID"}, $res);
 };
 

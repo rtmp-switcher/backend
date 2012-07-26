@@ -226,7 +226,12 @@ sub launchProcess($) {
 sub launchInChanHandler($ $ $) {
   my ($id_in, $id_out, $proc_stat) = @_;
 
-  my @chan_cmd = getChanCmd($id_in);
+  my @chan_cmd = getLatestChanCmd($id_in);
+  if(@chan_cmd eq 0) {
+    _log "getLatestChanCmd is empty for the channel $id_in";
+    return;
+  };
+
   my $cmd = $chan_cmd[1] . "-o " . getFIFOname($id_out);
   my $fname_prefix = File::Spec->catfile($global_cfg{"rtmpdump_log_dir"}, "rtmpdump");
 
@@ -241,7 +246,10 @@ sub launchOutChanHandler($ $) {
   my ($id_out, $proc_stat) = @_;
 
   my $flv_fname = getBkpFname($id_out);
-  my @chan_cmd = getChanCmd($id_out);
+  my @chan_cmd = getLatestChanCmd($id_out);
+
+  # Outgoing channel must have connection detail
+  assert(@chan_cmd eq 2);
 
   my $cmd = "cat " . getFIFOname($id_out) . " | tee $flv_fname | ffmpeg -i - " . $chan_cmd[1];
 
@@ -298,6 +306,12 @@ sub handleConnect($ $) {
 
   my %proc_stat_in; my %proc_stat_out;
   launchInChanHandler($id_in, $id_out, \%proc_stat_in);
+
+  if(!exists($proc_stat_in{"cmd"})) {
+    _log "Unable to launch incoming channel handler. Ignoring the task.";
+    return;
+  };
+
   launchOutChanHandler($id_out, \%proc_stat_out);
 
   my %con; # Connection data. Hash of hashes
