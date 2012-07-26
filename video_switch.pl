@@ -227,8 +227,13 @@ sub launchInChanHandler($ $ $) {
   my ($id_in, $id_out, $proc_stat) = @_;
 
   my @chan_cmd = getLatestChanCmd($id_in);
-  if(@chan_cmd eq 0) {
-    _log "getLatestChanCmd is empty for the channel $id_in";
+  if(!defined($chan_cmd[0])) {
+    # No channel details for the channel $id_in
+    _log "There are no channel_details for the channel $id_in";
+    return;
+  } elsif(!defined($chan_cmd[1])) {
+    # Latest channel_details row was checked more than 3 times without any success
+    _log "Channel detail " . $chan_cmd[0] . " is not good enough, NOT launching rtmpdump";
     return;
   };
 
@@ -248,8 +253,9 @@ sub launchOutChanHandler($ $) {
   my $flv_fname = getBkpFname($id_out);
   my @chan_cmd = getLatestChanCmd($id_out);
 
-  # Outgoing channel must have connection detail
-  assert(@chan_cmd eq 2);
+  # Outgoing channel must have connection details
+  assert(defined($chan_cmd[0]));
+  assert(defined($chan_cmd[1]));
 
   my $cmd = "cat " . getFIFOname($id_out) . " | tee $flv_fname | ffmpeg -i - " . $chan_cmd[1];
 

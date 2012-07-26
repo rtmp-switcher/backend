@@ -65,9 +65,9 @@ sub getChanType($);
 # Get channel type id by its name
 sub getChanTypeId($);
 
-# Returns the list: (channel details id, command line for the channel depending on its type) or empty list
-# empty list is returned if no channel details exists for the channel specified or connect_attempts for the
-# latest channel detail record for this channel is more than 2.
+# Returns the list: (channel_details_id, command_line_for_the_channel_depending_on_its_type)
+# If no channel_details exists for the channel specified, undef is returned in place of channel_details_id
+# If connect_attempts for the latest channel detail record is more than 2, undef is returned in place of cmdline.
 # Input argument: channel id
 sub getLatestChanCmd($);
 
@@ -343,16 +343,16 @@ sub getLatestChanCmd($) {
    assert($cd->isEmpty ne 1);
 
    if($cd->nofRow ne 1) {
-     _log "getLatestChanCmd: [$id] got " . $cd->nofRow . " rows instead of 1, returning empty array";
-     return ();
+     _log "ERR: getLatestChanCmd: [$id] got " . $cd->nofRow . " rows instead of 1.";
+     return (undef, undef);
    };
 
    # Creating command line based on the query results
    my $row = $cd->rowHashRef(0);
    if($row->{"CONNECT_ATTEMPTS"} > 2) {
-     _log "getLatestChanCmd: [$id] connect_attempts == " . $row->{"CONNECT_ATTEMPTS"} . " for the detail " .
-           $row->{"ID"} . ", returning empty array";
-     return ();
+     _log "ERR: getLatestChanCmd: [$id] connect_attempts == " . $row->{"CONNECT_ATTEMPTS"} . " for the detail " .
+          $row->{"ID"};
+     return ($row->{"ID"}, undef);
    };
 
    my $res; # Resulting string
