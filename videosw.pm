@@ -14,7 +14,7 @@ use Carp::Assert;
 use Config;
 
 @ISA = qw(Exporter);
-@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL ModifyDbValues GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getLatestChanCmd getBkpFolder getBkpFname my_time my_time_short);
+@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL ModifyDbValues GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getLatestChanCmd getBkpFolder getBkpFname incrConnectAttemps my_time my_time_short);
 
 use strict;
 use vars qw(@ISA @EXPORT $VERSION);
@@ -52,8 +52,8 @@ sub RegisterSQL($ $ $);
 # SQL statement should be registered with RegisterSQL
 # Param 1: SQL-statement key (th esame as used in RegisterSQL)
 # Param 2: List of values to insert
-# IMPORTANT: commit is not called. The caller of thsi function shoudl take care about commiting or use autocommit
-sub ModifyDbValues($ $);
+# Param 3: Should database commit be called (1) or not (anything else).
+sub ModifyDbValues($ $ $);
 
 sub GetCachedDbValue($ $);
 
@@ -76,6 +76,10 @@ sub getBkpFolder($);
 
 # Get the current file name for the recording
 sub getBkpFname($);
+
+# Increment connect_attempts counter by 1
+# Input argument: connection_details id
+sub incrConnectAttemps($);
 
 ## Returns time strings
 sub my_time ();
@@ -222,6 +226,9 @@ sub parse_config ($) {
 
     # Get the backup folder for the specified channel id
     RegisterSQL("bkp_folder", "SELECT bkp_folder FROM channels WHERE id = ?", 0);
+
+    # Increments connect_attempts counter for specified channel connection details id
+    RegisterSQL("incr_conn_cntr", "UPDATE channel_details SET connect_attempts = connect_attempts + 1 WHERE id = ?", 0);
   };
 
   sub DoneDbCache() {
@@ -243,9 +250,10 @@ sub parse_config ($) {
     return 1;
   };
 
-  sub ModifyDbValues($ $) {
+  sub ModifyDbValues($ $ $) {
     my $key = shift;
     my $id_ref = shift;
+    my $commit_needed = shift;
 
     unless(exists($st{$key})) {
       # First usage. Preparing the statement
@@ -254,6 +262,11 @@ sub parse_config ($) {
 
     # Inserting, deleting or updating the values
     $st{$key}->execute(@$id_ref) or log_die "executing: " . $st{$key}->errstr;
+
+    # Commit if needed
+    if($commit_needed eq 1) {
+       $db->commit or log_die $db->errstr;
+    };
   };
 
   sub GetCachedDbTable($ $) {
@@ -304,22 +317,26 @@ sub parse_config ($) {
   };
 };
 
+# Increment connect_attempts counter by 1
+# Input argument: connection_details id
+sub incrConnectAttemps($) {
+   my @args = ($_[0]);
+   return ModifyDbValues("incr_conn_cntr", \@_, 1);
+};
+
 # Get channel type id by its name
 sub getChanTypeId($) {
-   my @args = ($_[0]);
-   return  GetCachedDbValue("chan_types", \@args);
+   return  GetCachedDbValue("chan_types", \@_);
 };
 
 # Get channel type id for the specified channel id
 sub getChanType($) {
-   my @args = ($_[0]);
-   return  GetCachedDbValue("chan_type_by_id", \@args);
+   return  GetCachedDbValue("chan_type_by_id", \@_);
 };
 
 # Get backup folder for the specified channel id
 sub getBkpFolder($) {
-   my @args = ($_[0]);
-   return  GetCachedDbValue("bkp_folder", \@args);
+   return  GetCachedDbValue("bkp_folder", \@_);
 };
 
 # Get the current file name for the recording

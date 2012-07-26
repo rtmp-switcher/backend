@@ -67,8 +67,7 @@ sub dropConnectionFromDb($ $) {
 
   _log "Removing the connection record from the database: $id_in <-> $id_out";
 
-  ModifyDbValues("connection-del", \@_);
-  $dbh->commit or log_die $dbh->errstr;
+  ModifyDbValues("connection-del", \@_, 1);
 };
 
 # Adds connection record to the database
@@ -79,8 +78,7 @@ sub addConnectionToDb($ $) {
 
   _log "Inserting the connection record to the database: $id_in <-> $id_out";
 
-  ModifyDbValues("connections-ins", \@_);
-  $dbh->commit or log_die $dbh->errstr;
+  ModifyDbValues("connections-ins", \@_, 1);
 };
 
 # Returns the name of the FIFO used to communicate between rtmpdump and ffmpeg
