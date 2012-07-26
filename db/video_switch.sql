@@ -66,6 +66,7 @@ CREATE  TABLE IF NOT EXISTS `video_switch`.`channel_details` (
   `url` TEXT NOT NULL COMMENT 'VIDEO_url' ,
   `pageUrl` TEXT NOT NULL COMMENT 'VIDEO_pageURL' ,
   `tcUrl` TEXT NOT NULL COMMENT 'VIDEO_tcURL' ,
+  `connect_attempts` TINYINT NOT NULL DEFAULT 0 COMMENT 'Connection attempts counter for monitoring software' ,
   `tm_created` TIMESTAMP NOT NULL DEFAULT   CURRENT_TIMESTAMP ,
   PRIMARY KEY (`id`, `channel`) ,
   INDEX `fk_chan_id` (`channel` ASC) ,
