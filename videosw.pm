@@ -14,7 +14,7 @@ use Carp::Assert;
 use Config;
 
 @ISA = qw(Exporter);
-@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL ModifyDbValues GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getLatestChanCmd getBkpFolder getBkpFname incrConnectAttemps resetConnectAttempts getDbName my_time my_time_short);
+@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL ModifyDbValues GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getLatestChanCmd getBkpFolder getBkpFname incrConnectAttemps resetConnectAttemps getDbName my_time my_time_short);
 
 use strict;
 use vars qw(@ISA @EXPORT $VERSION);

@@ -13,11 +13,17 @@ use LWP;
 use Data::Dumper;
 use JSON;
 use DBI;
+use POSIX qw(setsid);
+use LWP::Simple;
+
 
 ## Include common VideoSwitch library
 use videosw;
 
 ## Global VARs ##################################################################
+
+## vide_switcher database ID
+my $dbid="";
 
 ## read configuration parameters from file
 my %global_cfg=();
@@ -28,17 +34,16 @@ my ($ch_bkp_dir, $bkp_dir);
 parse_config(\%global_cfg);
 
 # Open Logfile
-$global_cfg{mon_log_dir}= "/tmp" if ( ! defined $global_cfg{mon_log_dir} ); 
-initLogFile ($global_cfg{mon_log_dir}."/video_switch_mon_".my_time_short.".log");
+$global_cfg{mon_log_dir} = "/tmp" if ( ! defined $global_cfg{mon_log_dir} ); 
 
 # define temp dir
-$global_cfg{mon_tmp_dir}="/tmp" if ( ! -w $global_cfg{mon_tmp_dir} ); 
+$global_cfg{mon_tmp_dir} = "/tmp" if ( ! -w $global_cfg{mon_tmp_dir} ); 
 
 # define file size limit to 50M
-$global_cfg{limit_size}=50000000 if ( $global_cfg{limit_size} !~ /^\d+$/ );
+$global_cfg{limit_size} = 50000000 if ( $global_cfg{limit_size} !~ /^\d+$/ );
 
 # define wait time 
-$global_cfg{mon_wait_time}=2 if ( $global_cfg{mon_wait_time} !~ /^\d+$/ );
+$global_cfg{mon_wait_time} = 2 if ( $global_cfg{mon_wait_time} !~ /^\d+$/ );
 
 ## Subs #########################################################################
 # Get list of channels by channel type
@@ -62,41 +67,105 @@ sub getChanStates() {
 #
 #};
 
+sub databasename () {
+ my $a = GetCachedDbTable("database_name", \@_);
+
+ my $b=$a->rowHashRef(0);
+ return ($b->{'DATABASE()'});
+
+}
+
 sub getChansStatus {
    my @args = shift;
    return  GetCachedDbTable("chans_status", \@args);
 };
 
 sub start_cmd ($) {
+ my $cmd=shift;
+ my $pid = fork();
 
-my $cmd=shift;
+ die "unable to fork: $!" unless defined($pid);
+ if (!$pid) {  # child
+     exec($cmd);
+     log_die "unable to exec: $!";
+ } ## end  if
 
-my $pid = fork();
-
-
-die "unable to fork: $!" unless defined($pid);
-if (!$pid) {  # child
-    exec($cmd);
-    log_die "unable to exec: $!";
-    
-}
 # parent continues here, pid of child is in $pid
 return $pid;
 
-}
+} ## end sub;
+
+## kill rtmpdump with childs
+sub kill_rtmp_by_pid ($$) {
+
+ my ( $pid, $pid_from_OS_with_child ) = @_;
+ my (%pids,%pids_w_ch)=();
+
+ if ($pid=~/^\d+$/ && $pid>1 ) {
+
+       `kill $$pid_from_OS_with_child{$pid}` if (defined $$pid_from_OS_with_child{$pid});
+       `kill $pid`;
+       sleep (1);
+
+       `kill -9 $$pid_from_OS_with_child{$pid}` if (defined $$pid_from_OS_with_child{$pid}) ;
+       `kill -9 $pid`;
+ } ## end if
+
+} ## end sub
 
 
+## get PIDs rtmpdump record command running on server
+sub get_rtmp_processes ($$) {
+
+  my ($pid_from_OS, $pid_from_OS_with_child) = @_;
+
+  my $rtmp_processes_command_mask='ps axo pid,ppid,cmd | grep -i "rtmpdump" | grep -i "_rec_ch" | grep "$dbid" | grep -v grep';
+  my @out = `$rtmp_processes_command_mask`;
+
+  foreach my $p (@out) {
+
+    ## extract pid and ppid from ps output
+    my ($pid,$ppid,$command) = $p=~/^\s*(\d+)\s+(\d+)\s+(.*)$/;
+    $$pid_from_OS{$pid}=$ppid if ($pid =~ /^\d+$/);
+
+    ## defined if process has a parent and parent process has a child
+    $$pid_from_OS_with_child{$ppid} = $pid if ( defined $$pid_from_OS{$ppid} );
+
+  } ## end foreach
+} ## end sub
+
+
+# here is where we make ourself a daemon
+sub daemonize {
+ chdir '/' or log_die "Can't chdir to /: $!";
+ open STDIN, "/dev/null" or log_die "Can't read /dev/null: $!";
+ open STDOUT, ">>/dev/null" or log_die "Can't write to /dev/null: $!";
+ open STDERR, ">>/dev/null" or log_die "Can't write to /dev/null: $!";
+ defined(my $pid = fork) or log_die "Can’t fork: $!";
+ exit if $pid;
+ setsid or log_die "Can't start a new session: $!";
+ umask 0;
+} ## end sub
+
+# flush the buffer
+  $| = 1;
+
+# daemonize the program
+#  &daemonize;
+
+ 
   # Database connection
   my $dbh = DBI->connect("DBI:mysql:" . $global_cfg{"data_source"},
                     $global_cfg{"db_user"},
                     $global_cfg{"db_pswd"}, { RaiseError => 0, AutoCommit => 0 })
-  or log_die "Database connection not made: $DBI::errstr";
-
-  _log "Connected to the database " . $global_cfg{"data_source"};
+ or die "Database connection not made: $DBI::errstr";
+ 
 
   # Cached SQL statements
   {
     # Get list of channels by channel type
+    RegisterSQL("database_name", "SELECT database()", 0);
+
     RegisterSQL("chans_by_type", "SELECT * FROM channels WHERE chan_type = ?", 0);
 
     RegisterSQL("chan_states", "SELECT * FROM channel_states", 0);
@@ -115,7 +184,12 @@ return $pid;
   # Initializing the caches
   InitDbCache($dbh);
 
-while (1) {
+ $dbid=databasename;
+
+
+ while (1) {
+  
+  initLogFile ($global_cfg{mon_log_dir}."/video_switch_mon_".my_time_short.".log");
 
   _log " --- Start ----------------------------";
 
@@ -125,9 +199,6 @@ while (1) {
   ## get channels from server DB
   my $ch_tbl = getChansByType(getChanTypeId("RTMP_IN"));
 
-  ## get PIDs rtmpdump record command running on server
-  my @out = `ps axo pid,ppid,cmd | grep -i "rtmpdump" | grep -i "rtmp_record" | grep -v grep`;
-
   ## get channel states from server DB 
   my $ch_states = getChanStates();
 
@@ -136,17 +207,8 @@ while (1) {
 
   ## ------------------------------------------
   ## create OS rtmpdump processes hash
+  get_rtmp_processes (\%pid_from_OS,\%pid_from_OS_with_child);
 
-  foreach my $p (@out) {
-
-    ## extract pid and ppid from ps output
-    my ($pid,$ppid,$command) = $p=~/^\s*(\d+)\s+(\d+)\s+(.*)$/;
-    $pid_from_OS{$pid}=$ppid if ($pid =~ /^\d+$/);
-     
-    ## defined if process has a parent and parent process has a child
-    $pid_from_OS_with_child{$ppid} = $pid if ( defined $pid_from_OS{$ppid} );
-
-  } ## end foreach
 
   ## ------------------------------------------
   ## channel states from DB
@@ -181,71 +243,66 @@ while (1) {
 
   for (my $i = 0; $i < $ch_stat->nofRow; $i++) {
  	my $r = $ch_stat->rowHashRef($i);
-	my $id=$r->{CHANNEL};
+	my $ch=$r->{CHANNEL};
 
-	if (defined $id) {
+	if (defined $ch) {
 	  foreach my $k (keys %$r ) {
 
 	    ## write status of channel to hash
-	    $CH{$id}{$k}= $r->{$k};
+	    $CH{$ch}{$k}= $r->{$k};
   	  }
 
-	  ## delete status of desabled channel
-	  if ($CH{$id}{IS_ENABLED} != 1) {
+        _log ("In DB for channel: $ch find PID: $CH{$ch}{PID}") if ($CH{$ch}{PID} =~ /^\d+$/ && $CH{$ch}{PID} > 0);
 
-	    _log 'delete status of disabled channel: $id';
-	    delete $CH{$id};
-	    my @a=($id);
-	    ModifyDbValues("delete_from_status", \@a, 1);
-	  
-	  
-	  } ## end if
         } ## end if 
 
   } ## end for
 
   ## ------------------------------------------
+  ## Delete disabled channel from channel hash 
+
+  foreach my $ch (keys %CH) {
+
+  ## delete status of desabled channel
+    if ( $CH{$ch}{IS_ENABLED} < 1 ) {
+
+      if ( defined $CH{$ch}{CHECKED_DETAILS} ) {
+
+           _log "delete status of disabled channel from DB: $ch";
+           my @a=($ch);
+           ModifyDbValues("delete_from_status", \@a, 1);
+
+       } ## end if
+
+       _log "delete disabled channel from hash: $ch";
+       delete $CH{$ch};
+
+    } ## end if
+
+  } ##end foreach
+  
+  
+  ## ------------------------------------------
   ## write status in channel hash 
   ## on OS PID information
 
   foreach my $ch (keys %CH) {
-   if ( defined $CH{$ch}{PID}) {
+
+   if ( $CH{$ch}{PID} =~ /^\d+$/ && $CH{$ch}{PID} > 0) {
 
      if (defined $pid_from_OS{ $CH{$ch}{PID} }) {
-       _log ("Ok! Find channel:$ch record process.");
+       _log ("Ok! Find working channel:$ch record process.");
 
        my $pid=$CH{$ch}{PID};
 
        delete $pid_from_OS{ $pid };
        delete $pid_from_OS{ $pid_from_OS_with_child {$pid} };
 
-       $CH{$ch}{CHECKSTATUS} = 'WORKED';
+       $CH{$ch}{CHECKSTATUS} = 'WORKING';
 
      } ##end if   
 
    } ##end if 
-
-  } ## end foreach
-
-  ## ------------------------------------------
-  ## Get first file sizes for worked 
-  ## rtmpdump processes
-
-  foreach my $ch (keys %CH) {
-
-    if ( $CH{$ch}{CHECKSTATUS} eq 'WORKED' && -e $CH{$ch}{RECORDED_FNAME} ) {
-
-      $CH{$ch}{FIRST_SIZE} = -s $CH{$ch}{RECORDED_FNAME};
-
-      ## we need start new record process when file limit exceed
-      if ( $CH{$ch}{FIRST_SIZE} > $global_cfg{limit_size} ) {
-        
-        $CH{$ch}{CHECKSTATUS} = 'FILE_LIMIT_EXCEED';      
-	_log "On channel: $ch File size limit: $global_cfg{limit_size} exceed: $CH{$ch}{RECORDED_FNAME}";
-      
-      }
-
-    } ## end if
 
   } ## end foreach
 
@@ -257,17 +314,12 @@ while (1) {
 
     ## kill child processes and processes without childs
     if ( ( $pid_from_OS{$pid} != 1) || ( $pid_from_OS{$pid} == 1 && ! defined $pid_from_OS_with_child{$pid} ) ) { 
-    
-      _log ("Kill process with pid: $pid, because not find in database");
-      `kill $pid`;
 
-      ## sleep 1 second, check process and if find it in memory, then send -9
-      sleep (1);
-      my $str = `ps axo pid,ppid,cmd | grep -i "rtmpdump" | grep -i "rtmp_record" | grep $pid |  grep -v grep`;
-      $str =~ /^\s*(\d+)\s*.*$/mg;
-      `kill -9 $pid` if ($pid eq $1);
+      _log ("Kill process with pid: $pid, because not find in database");
+      kill_rtmp_by_pid ($pid, \%pid_from_OS_with_child);
 
     } ## end if
+
   } ## end foreach
 
 
@@ -311,6 +363,7 @@ while (1) {
 
         ## Can write to channel folder?
         if ( ! -w $ch_bkp_dir ) {
+
             _log "Can't write to channel dir: $ch_bkp_dir";
 	    _log "Write to temp";
 
@@ -329,6 +382,28 @@ while (1) {
   } ## end forech   
 
   ## ------------------------------------------
+  ## Get first file sizes for worked 
+  ## rtmpdump processes
+
+  foreach my $ch (keys %CH) {
+
+    if ( $CH{$ch}{CHECKSTATUS} =~/^(WORKING)$/ && -e $CH{$ch}{RECORDED_FNAME} ) {
+
+      $CH{$ch}{FIRST_SIZE} = -s $CH{$ch}{RECORDED_FNAME};
+
+      ## we need start new record process when file limit exceed
+      if ( $CH{$ch}{FIRST_SIZE} > $global_cfg{limit_size} ) {
+
+        $CH{$ch}{CHECKSTATUS} = 'FILE_LIMIT_EXCEED';
+        _log "On channel: $ch File size limit: $global_cfg{limit_size} exceed: $CH{$ch}{RECORDED_FNAME}";
+
+      }
+
+    } ## end if
+
+  } ## end foreach
+
+  ## ------------------------------------------
   ## start RTMPDUMP command 
 
   foreach my $ch (sort keys %CH) {
@@ -342,7 +417,7 @@ while (1) {
       if ($cmd =~ /rtmpdump/) {
 
         ## channel_record_filename
-        my $file=$CH{$ch}{CHANNEL_BKP_FOLDER}."/rtmp_record_ch".$ch."_time_".my_time.".rtmp";
+        my $file=$CH{$ch}{CHANNEL_BKP_FOLDER}."/".$dbid."_rec_ch".$ch."_time_".my_time.".rtmp";
 
         $cmd=$cmd." -o $file 2>$file.err_log 1>$file.log";
 
@@ -356,32 +431,34 @@ while (1) {
 
           ## kill old process when restart rtmpdump
 	  if ($CH{$ch}{CHECKSTATUS} eq 'FILE_LIMIT_EXCEED') {
-	     _log "Kill old record process for channel: $ch. File size limit exceed.";
-	    `kill $pid_from_OS_with_child{$CH{$ch}{PID}}`;
-	    `kill $CH{$ch}{PID}`;
-	    sleep (1);
-	    `kill -9 $pid_from_OS_with_child{$CH{$ch}{PID}}`;
-	    `kill -9 $CH{$ch}{PID}`;
 
-	    $CH{$ch}{CHECKSTATUS} = 'WORKED_AFTER_RESTART';
-	    _log "Start new file record for channel: $ch";
+	     _log "Start new file record for channel: $ch";
+	     $CH{$ch}{CHECKSTATUS} = 'WORKING';
+
+	     _log "Kill old record process for channel: $ch. File size limit exceed.";
+              kill_rtmp_by_pid ($CH{$ch}{PID}, \%pid_from_OS_with_child);
 
 	  } else {
 	  
 	    $CH{$ch}{CHECKSTATUS} = 'STARTED';
 	  
 	  }## end if
-
+          
+          ## set channel hash PID, channel_details ID and record file name
           $CH{$ch}{PID} = $res;
 	  $CH{$ch}{CHECKED_DETAILS} = $ch_details_id;
-          $CH{$ch}{RECORDED_FNAME}=$file;
-	  _log "Succesful started command for channel: $ch";
+          $CH{$ch}{RECORDED_FNAME}  = $file;
+
+	  ## check file size
+	  $CH{$ch}{FIRST_SIZE} = -s $CH{$ch}{RECORDED_FNAME};
+
+	  _log "Succesful started command whith PID:$res for channel: $ch";
 
 
         } else {
       
             _log "Can't start command for channel: $ch, see logs for details";
-	   $CH{$ch}{CHECKSTATUS} = 'FAILED_START';
+	   $CH{$ch}{CHECKSTATUS} = 'NEED_RESTART';
 	    
         } ## end if 
       
@@ -399,18 +476,28 @@ while (1) {
   ## ------------------------------------------
   ## sleep after start RTMP commands
 
+  _log ("Waiting: $global_cfg{mon_wait_time} sec");
   sleep ($global_cfg{mon_wait_time});
 
   ## ------------------------------------------
   ## update status in hash after start commands 
 
+  ## create OS rtmpdump processes hash
+  %pid_from_OS=();
+  %pid_from_OS_with_child=();
+  get_rtmp_processes (\%pid_from_OS,\%pid_from_OS_with_child);
+
   foreach my $ch (keys %CH) {
     
-     if ($CH{$ch}{CHECKSTATUS} =~ /(STARTED|WORKED_AFTER_RESTART)/ ) {
-       ## check PID in memory
-       my $str = `ps axo pid,ppid,cmd | grep -i "rtmpdump" | grep -i "rtmp_record" | grep "$CH{$ch}{PID}" |  grep -v grep`;
-       $str =~ /^\s*(\d+)\s*.*$/mg;
-       $CH{$ch}{CHECKSTATUS} = 'FAILED_START' if ( $1 !~ /^\d+$/);
+     if ($CH{$ch}{PID}=~/^\d+$/) {
+
+       if ( ! defined $pid_from_OS { $CH{$ch}{PID} } ) {
+
+           _log ("Can't find in memory: $CH{$ch}{PID} after start record process for channel: $ch");
+           $CH{$ch}{CHECKSTATUS} = "NEED_RESTART" if ( $1 !~ /^\d+$/);
+
+       } # end if
+
      } ## end if
 
   } ## end foreach
@@ -440,19 +527,30 @@ while (1) {
 
   foreach my $ch (keys %CH) {
 
-    if ( $CH{$ch}{CHECKSTATUS} eq 'WORKED' && defined $CH{$ch}{FIRST_SIZE} ) {
+    if ( defined $CH{$ch}{FIRST_SIZE} ) {
 
      $CH{$ch}{SECOND_SIZE} = -s $CH{$ch}{RECORDED_FNAME};
 
       if ( abs($CH{$ch}{SECOND_SIZE} - $CH{$ch}{FIRST_SIZE}) < 1 ) {
+         if ( $CH{$ch}{CHECKSTATUS} =~ /^(WORKING)$/ ) {
+	    _log "Channel $ch. Need restart working process. File size:$CH{$ch}{FIRST_SIZE} does not grow: $CH{$ch}{RECORDED_FNAME}";   
+         } else { 
+            _log "Channel $ch. Failed to start. File size:$CH{$ch}{FIRST_SIZE} does not grow: $CH{$ch}{RECORDED_FNAME}"; 
+         } ## end if
+      
+         $CH{$ch}{CHECKSTATUS} = 'NEED_RESTART';
 
-          ## restart if file size does not grow
-          $CH{$ch}{CHECKSTATUS} = 'NEED_RESTART';
+      } ## end if  
+      
+    } else {
+          ## Record file size of started process is 0 
+          if ( $CH{$ch}{CHECKSTATUS} =~ /^(STARTED)$/ && ( -s $CH{$ch}{RECORDED_FNAME} ) < 1 ) {
 
-	  _log "Restart! File size:$CH{$ch}{FIRST_SIZE} does not grow: $CH{$ch}{RECORDED_FNAME}";   
+            _log "Channel $ch. Failed to start. File: $CH{$ch}{RECORDED_FNAME} size is 0";
 
-      }
+	    $CH{$ch}{CHECKSTATUS} = 'NEED_RESTART';
 
+          } ## end if
     } ## end if
 
   } ## end foreach
@@ -461,23 +559,42 @@ while (1) {
   ## ------------------------------------------
   ## start writing channel status to DB
 
+  ## create OS rtmpdump processes hash
+  %pid_from_OS=();
+  %pid_from_OS_with_child=();
+  get_rtmp_processes (\%pid_from_OS,\%pid_from_OS_with_child);
+
   foreach my $ch (keys %CH) {
 
      $CH{$ch}{MESSAGE}=$CH{$ch}{CHECKSTATUS};
 
-     if ($CH{$ch}{CHECKSTATUS} eq 'FAILED_START') {
+     if ($CH{$ch}{CHECKSTATUS} eq 'NEED_RESTART') {
      
-        incrConnectAttemps( $CH{$ch}{CHECKED_DETAILS} ); 
+       ## increment connection attepms
+       incrConnectAttemps( $CH{$ch}{CHECKED_DETAILS} ); 
      
-     } ## end if
+       ## kill bad record processes with PID
+       if ( $CH{$ch}{PID} > 0 ) {
 
-     if ( $CH{$ch}{CHECKSTATUS} =~/^(FAILED_START|EMPTY_RTMP_COMMAND|NEED_RESTART)$/ ) {
+          get_rtmp_processes (\%pid_from_OS,\%pid_from_OS_with_child);
+          _log "Kill bad record process with PID: $CH{$ch}{PID} for channel: $ch. Need restart.";
+          kill_rtmp_by_pid ($CH{$ch}{PID}, \%pid_from_OS_with_child);
+
+       } ## end if
+
+       ## set channel attributes for DB
+       _log "Set to '' hash PID for channel $ch, because file size does not grow";
        $CH{$ch}{STATE}=$chan_states{DOWN};
        $CH{$ch}{PID} = "";
        $CH{$ch}{RECORDED_FNAME}=""
-     
-     } ## end if
 
+     
+     } else {
+     
+       $CH{$ch}{STATE}=$chan_states{UP};
+       resetConnectAttemps ( $CH{$ch}{CHECKED_DETAILS} );
+     
+     }## end if
 
      ## insert new status in channel status
      if (! defined $CH{$ch}{URI} && defined $CH{$ch}{CHECKED_DETAILS}) {
@@ -505,7 +622,7 @@ while (1) {
 
   } ## end foreach
 
-#  print Dumper %CH;
+  print Dumper %CH;
 
   _log " --- Stop -----------------------------";
 
@@ -514,5 +631,4 @@ while (1) {
 ## Disconnect from DB
 DoneDbCache();
 $dbh->disconnect;
-
 

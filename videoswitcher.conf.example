@@ -14,3 +14,10 @@ tasks_dir = /tmp/video_tasks
 ffmpeg_log_dir = ~/.videoswitcher/ffmpeg.logs/
 ## Directory to write rtmpdump logs to
 rtmpdump_log_dir = ~/.videoswitcher/rtmpdump.logs/
+## Monitoring temporary
+mon_tmp_dir = /home/gavrikov/tmp
+## Record file size limit in byte
+limit_size=20000000
+## Monitoring process wait time in sec
+mon_wait_time = 3
+
