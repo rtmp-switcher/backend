@@ -112,6 +112,7 @@ CREATE  TABLE IF NOT EXISTS `video_switch`.`channel_status` (
   `message` TEXT NULL DEFAULT NULL COMMENT 'Any info from the monitoring software' ,
   `recorded_fname` TEXT NULL COMMENT 'Recording file name\n' ,
   `tm_created` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ,
+  `tm_next_check` TIMESTAMP NULL DEFAULT NULL COMMENT 'Next scheduled check time' ,
   PRIMARY KEY (`channel`, `checked_details`, `state`) ,
   INDEX `fk_state` (`state` ASC) ,
   INDEX `fk_chan_details` (`checked_details` ASC) ,
