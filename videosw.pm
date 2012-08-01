@@ -14,7 +14,7 @@ use Carp::Assert;
 use Config;
 
 @ISA = qw(Exporter);
-@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL ModifyDbValues GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getLatestChanCmd getBkpFolder getBkpFname incrConnectAttemps my_time my_time_short);
+@EXPORT = qw(parse_config initLogFile InitDbCache DoneDbCache RegisterSQL ModifyDbValues GetCachedDbTable GetCachedDbValue _log log_die getChanType getChanTypeId getLatestChanCmd getBkpFolder getBkpFname incrConnectAttemps resetConnectAttempts getDbName my_time my_time_short);
 
 use strict;
 use vars qw(@ISA @EXPORT $VERSION);
@@ -80,6 +80,13 @@ sub getBkpFname($);
 # Increment connect_attempts counter by 1
 # Input argument: connection_details id
 sub incrConnectAttemps($);
+
+# Resets connect_attempts counter to zero
+# Input argument: connection_details id
+sub resetConnectAttemps($);
+
+# Returns the database name the caller is connected to
+sub getDbName();
 
 ## Returns time strings
 sub my_time ();
@@ -229,6 +236,12 @@ sub parse_config ($) {
 
     # Increments connect_attempts counter for specified channel connection details id
     RegisterSQL("incr_conn_cntr", "UPDATE channel_details SET connect_attempts = connect_attempts + 1 WHERE id = ?", 0);
+
+    # Sets connect_attempts counter to zero for specified channel connection details id
+    RegisterSQL("reset_conn_cntr", "UPDATE channel_details SET connect_attempts = 0 WHERE id = ?", 0);
+
+    # Retrieves the database name we are connected to
+    RegisterSQL("get_db_name", "SELECT DATABASE()", 0);
   };
 
   sub DoneDbCache() {
@@ -317,12 +330,18 @@ sub parse_config ($) {
   };
 };
 
-# Increment connect_attempts counter by 1
-# Input argument: connection_details id
+sub resetConnectAttemps($) {
+   return ModifyDbValues("reset_conn_cntr", \@_, 1);
+};
+
 sub incrConnectAttemps($) {
-   my @args = ($_[0]);
    return ModifyDbValues("incr_conn_cntr", \@_, 1);
 };
+
+sub getDbName() {
+   my @args = ();
+   return GetCachedDbValue("get_db_name", \@args);
+}
 
 # Get channel type id by its name
 sub getChanTypeId($) {
